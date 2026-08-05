@@ -1,3 +1,12 @@
+# My Note
+
+## 2026-08-05
+
+I completed my KV-cache implementation in Julia.
+Now I'll do that with tenferro!
+I copied my Julia version in `julia` for my reference.
+Future me, delete it after completed!
+
 # GPT-2 Inference with tenferro
 
 I built a GPT-2 inference engine from scratch in Rust.
