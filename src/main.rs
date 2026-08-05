@@ -21,7 +21,7 @@ use std::io::{BufRead, BufReader, Write};
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
-use tenferro_runtime::TypedTensor;
+use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
 
 pub mod loader;
 pub mod tokenizer;
@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             serde_json::from_reader(reader)?
         };
 
-        transformer::get_model(tensors, config)
+        transformer::get_model(tensors, config)?
     };
 
     /*
@@ -153,6 +153,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
     */
+
+    // I want to move the ownership of tensors from `tensors` to `model`. Can I?
+    // So I'll test that. I'll simulate a tensor operation here.
+    let mut backend = CpuBackend::new();
+    let foo = TypedTensor::<f32>::from_vec_col_major(vec![], vec![2.269])?;
+    model.gf.add(&foo, &mut backend);
+    // OK, I understand, I need a `clone` on `get_model`, instead.
+    model.gf.mul(&foo, &mut backend);
 
     Ok(())
 }

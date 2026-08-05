@@ -40,6 +40,19 @@ pub struct Model {
     pub n_layer: usize,
     pub vocab_size: usize,
     pub e: f32,
+    pub wte: TypedTensor<f32>,
+    pub wpe: TypedTensor<f32>,
+    pub gf: TypedTensor<f32>,
+    pub tf: TypedTensor<f32>,
+}
+
+fn validate_shape(tensor: &TypedTensor<f32>, expected: [usize; 2]) -> Result<(), Box<dyn Error>> {
+    let shape = tensor.shape();
+    if shape != expected {
+        let message = format!("shape of tensor {shape:?} differs from expected {expected:?}");
+        return Err(message.into());
+    }
+    Ok(())
 }
 
 pub fn get_model(
@@ -51,7 +64,32 @@ pub fn get_model(
     let n_head = config["n_head"].as_u64().unwrap() as usize;
     let n_layer = config["n_layer"].as_u64().unwrap() as usize;
     let vocab_size = config["vocab_size"].as_u64().unwrap() as usize;
-    let e = config["e"].as_u64().unwrap() as f32;
+    let e = config["layer_norm_epsilon"].as_f64().unwrap() as f32;
+
+    let mut backend = CpuBackend::new();
+
+    // It feels more natural for me
+    // to perform "matrix * vector -> vector"
+    // than to perform "row vector * matrix -> row vector."
+    // Therefore, I apply `transpose` to the all matrices.
+
+    // &[a, b] means axis 0 becomes axis a and axis 1 becomes axis b maybe.
+    // So &[1, 0] is just a normal matrix transposition.
+    let wte = tensors["wte.weight"].transpose(&[1, 0], &mut backend)?;
+    validate_shape(&wte, [n_embd, vocab_size])?;
+
+    let wpe = tensors["wpe.weight"].transpose(&[1, 0], &mut backend)?;
+    validate_shape(&wpe, [n_embd, n_ctx])?;
+
+    // If I remember correctly
+    // tenferro raises RankMismatch
+    // when I try (TypedTensor with shape [a, b]) matmul (TypedTensor with shape [a]).
+    // If I need a matrix * vector operation
+    // I have to use (TypedTensor with shape [a, b]) matmul (TypedTensor with shape [a, 1]) instead.
+    // That means, I have to reshape the vectors to have the second index whose size is 1.
+    let gf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
+
+    let tf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
 
     // Rust's field init shorthand is elegant!
     let model = Model {
@@ -61,6 +99,10 @@ pub fn get_model(
         n_layer,
         vocab_size,
         e,
+        wte,
+        wpe,
+        gf,
+        tf,
     };
     Ok(model)
 }
