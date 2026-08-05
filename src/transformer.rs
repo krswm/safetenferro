@@ -18,9 +18,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::f32::consts::PI;
 
+use serde_json::Value;
 use tenferro_cpu::CpuBackend;
 use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
 
+/*
 pub struct Config {
     pub layer_norm_epsilon: f32,
     pub n_ctx: usize,
@@ -29,7 +31,41 @@ pub struct Config {
     pub n_layer: usize,
     pub vocab_size: usize,
 }
+*/
 
+pub struct Model {
+    pub n_ctx: usize,
+    pub n_embd: usize,
+    pub n_head: usize,
+    pub n_layer: usize,
+    pub vocab_size: usize,
+    pub e: f32,
+}
+
+pub fn get_model(
+    tensors: HashMap<String, TypedTensor<f32>>,
+    config: HashMap<String, Value>,
+) -> Result<Model, Box<dyn Error>> {
+    let n_ctx = config["n_ctx"].as_u64().unwrap() as usize;
+    let n_embd = config["n_embd"].as_u64().unwrap() as usize;
+    let n_head = config["n_head"].as_u64().unwrap() as usize;
+    let n_layer = config["n_layer"].as_u64().unwrap() as usize;
+    let vocab_size = config["vocab_size"].as_u64().unwrap() as usize;
+    let e = config["e"].as_u64().unwrap() as f32;
+
+    // Rust's field init shorthand is elegant!
+    let model = Model {
+        n_ctx,
+        n_embd,
+        n_head,
+        n_layer,
+        vocab_size,
+        e,
+    };
+    Ok(model)
+}
+
+/*
 /// The transformer for the GPT-2 architecture.
 pub fn transform(
     tensors: &HashMap<String, TypedTensor<f32>>,
@@ -423,3 +459,4 @@ fn show(tensor: &TypedTensor<f32>) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+*/

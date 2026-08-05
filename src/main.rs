@@ -40,22 +40,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Loading Files ====
 
-    let config = {
-        let path = &format!("{}/config.json", &args[1]);
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-
-        let conf: HashMap<String, Value> = serde_json::from_reader(reader)?;
-        transformer::Config {
-            layer_norm_epsilon: conf["layer_norm_epsilon"].as_f64().unwrap() as f32,
-            n_ctx: conf["n_ctx"].as_u64().unwrap() as usize,
-            n_embd: conf["n_embd"].as_u64().unwrap() as usize,
-            n_head: conf["n_head"].as_u64().unwrap() as usize,
-            n_layer: conf["n_layer"].as_u64().unwrap() as usize,
-            vocab_size: conf["vocab_size"].as_u64().unwrap() as usize,
-        }
-    };
-
     let (token_to_id, id_to_token) = {
         let path = &format!("{}/vocab.json", &args[1]);
         let file = File::open(path)?;
@@ -85,33 +69,62 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut split = line.split(" ");
             let token0 = split.next().unwrap().to_string();
             let token1 = split.next().unwrap().to_string();
-
             ranks.insert((token0, token1), rank);
             rank += 1;
         }
         ranks
     };
 
-    // ==== Tokenization ====
-
-    if args[2].is_empty() {
-        println!("Your prompt should not be empty.");
-        return Ok(());
-    }
-
-    let mut ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
-
-    if ids.len() >= config.n_ctx {
-        println!("Your prompt exceeds the context length. Try shorter prompt.");
-        return Ok(());
-    }
-
-    // ==== Loading Tensors ====
-
+    /*
     let tensors = {
         let path = &format!("{}/model.safetensors", &args[1]);
         loader::load_safetensors(path)?
     };
+
+    let config = {
+        let path = &format!("{}/config.json", &args[1]);
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+
+        let conf: HashMap<String, Value> = serde_json::from_reader(reader)?;
+        transformer::Config {
+            layer_norm_epsilon: conf["layer_norm_epsilon"].as_f64().unwrap() as f32,
+            n_ctx: conf["n_ctx"].as_u64().unwrap() as usize,
+            n_embd: conf["n_embd"].as_u64().unwrap() as usize,
+            n_head: conf["n_head"].as_u64().unwrap() as usize,
+            n_layer: conf["n_layer"].as_u64().unwrap() as usize,
+            vocab_size: conf["vocab_size"].as_u64().unwrap() as usize,
+        }
+    };
+    */
+
+    let model = {
+        let tensors = {
+            let path = &format!("{}/model.safetensors", &args[1]);
+            loader::load_safetensors(path)?
+        };
+
+        let config: HashMap<String, Value> = {
+            let path = &format!("{}/config.json", &args[1]);
+            let file = File::open(path)?;
+            let reader = BufReader::new(file);
+            serde_json::from_reader(reader)?
+        };
+
+        transformer::get_model(tensors, config)
+    };
+
+    /*
+    // ==== Tokenization ====
+
+    let mut ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
+    if ids.len() == 0 {
+        println!("Your prompt should not be empty.");
+        return Ok(());
+    } else if ids.len() >= config.n_ctx {
+        println!("Your prompt exceeds the context length. Try shorter prompt.");
+        return Ok(());
+    }
 
     // ==== Inference ====
 
@@ -139,8 +152,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
     }
+    */
+
+    Ok(())
 }
 
+/*
 fn generate_next_id(
     tensors: &HashMap<String, TypedTensor<f32>>,
     config: &transformer::Config,
@@ -160,3 +177,4 @@ fn generate_next_id(
 
     Ok(next_id)
 }
+*/
