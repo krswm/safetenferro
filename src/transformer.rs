@@ -55,11 +55,12 @@ pub struct Model {
     pub n_layer: usize,
     pub vocab_size: usize,
     pub e: f32,
-    pub wte: TypedTensor<f32>,
-    pub wpe: TypedTensor<f32>,
+    pub id_embd_vecs: Vec<TypedTensor<f32>>,
+    pub pos_embd_vecs: Vec<TypedTensor<f32>>,
     pub layers: Vec<Layer>,
     pub gf: TypedTensor<f32>,
     pub tf: TypedTensor<f32>,
+    pub wte_transposed: TypedTensor<f32>,
 }
 
 fn validate_shape(tensor: &TypedTensor<f32>, expected: [usize; 2]) -> Result<(), Box<dyn Error>> {
@@ -89,13 +90,50 @@ pub fn get_model(
     // than to perform "row vector * matrix -> row vector."
     // Therefore, I apply `transpose` to the all matrices.
 
+    // This may also simplify the KV cache code
+    // since tenferro is col-major
+    // so adding a new column vector to the cache matrices
+    // is just appending the column vector to its internal Vector.
+
     // &[a, b] means axis 0 becomes axis a and axis 1 becomes axis b maybe.
     // So &[1, 0] is just a normal matrix transposition.
+    /*
     let wte = tensors["wte.weight"].transpose(&[1, 0], &mut backend)?;
     validate_shape(&wte, [n_embd, vocab_size])?;
 
     let wpe = tensors["wpe.weight"].transpose(&[1, 0], &mut backend)?;
     validate_shape(&wpe, [n_embd, n_ctx])?;
+    */
+
+    // wte and wpe are used just to obtain vectors at the input embedding phase
+    // (wte is also used for output embedding though, it is the transposed one)
+    // And my previous implementation in tenferro/Rust construct vector every time!
+    // So I'll obtain vectors beforehand here!
+    let id_embd_vecs = {
+        let mut embd_vecs = Vec::with_capacity(vocab_size);
+        for row in 0..vocab_size {
+            let mut colmaj = Vec::with_capacity(n_embd);
+            for col in 0..n_embd {
+                colmaj.push(*tensors["wte.weight"].get(&[row, col])?);
+            }
+            let embd_vec = TypedTensor::<f32>::from_vec_col_major(vec![n_embd, 1], colmaj)?;
+            embd_vecs.push(embd_vec);
+        }
+        embd_vecs
+    };
+
+    let pos_embd_vecs = {
+        let mut embd_vecs = Vec::with_capacity(n_ctx);
+        for row in 0..n_ctx {
+            let mut colmaj = Vec::with_capacity(n_embd);
+            for col in 0..n_embd {
+                colmaj.push(*tensors["wte.weight"].get(&[row, col])?);
+            }
+            let embd_vec = TypedTensor::<f32>::from_vec_col_major(vec![n_embd, 1], colmaj)?;
+            embd_vecs.push(embd_vec);
+        }
+        embd_vecs
+    };
 
     let layers = {
         let mut layers = Vec::with_capacity(n_layer);
@@ -149,6 +187,9 @@ pub fn get_model(
 
     let tf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
 
+    // Matrix transposed transposed is just original matrix!
+    let wte_transposed = tensors["wte.weight"].clone();
+
     // Rust's field init shorthand is elegant!
     let model = Model {
         n_ctx,
@@ -157,11 +198,12 @@ pub fn get_model(
         n_layer,
         vocab_size,
         e,
-        wte,
-        wpe,
+        id_embd_vecs,
+        pos_embd_vecs,
         layers,
         gf,
         tf,
+        wte_transposed,
     };
     Ok(model)
 }
