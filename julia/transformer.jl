@@ -124,6 +124,8 @@ end
 layer_norm(x::Vector{Float32}, g::Vector{Float32}, t::Vector{Float32}, e::Float32) =
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + e) + t
 
+tshow(tensor) = show(IOContext(stdout, :limit => true), "text/plain", tensor)
+
 # The transformer of the GPT-2 architecture, the heart of the inference engine.
 function transform!(
     cached_k::Vector{Vector{Matrix{Float32}}},
@@ -136,13 +138,17 @@ function transform!(
 
     # ids are 0-based. Julia is 1-based.
     x = model.wte[:, id+1] + model.wpe[:, pos]
+    println("---- A ----")
+    x |> tshow
 
-    for (layer, k_matrices, v_matrices) ∈ zip(model.layers, cached_k, cached_v)
+    for (i, (layer, k_matrices, v_matrices)) ∈ enumerate(zip(model.layers, cached_k, cached_v))
         #### Masked Multi-Head Attention ####
 
         y = layer_norm(x, layer.g1, layer.t1, model.e)
+        if i == 1; println("---- B ----"); y |> tshow; end
 
         y = layer.w11 * y + layer.b11
+        if i == 1; println("---- C ----"); y |> tshow; end
 
         q_vectors, k_vectors, v_vectors = (
             Iterators.partition(chunk, model.n_embd ÷ model.n_head) for

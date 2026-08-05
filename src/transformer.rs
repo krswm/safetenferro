@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::f32::consts::PI;
+use std::iter::zip;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
@@ -55,6 +56,7 @@ pub struct Model {
     pub n_layer: usize,
     pub vocab_size: usize,
     pub e: TypedTensor<f32>,
+    pub n_embd_as_tensor: TypedTensor<f32>,
     pub c1: TypedTensor<f32>,
     pub c2: TypedTensor<f32>,
     pub c3: TypedTensor<f32>,
@@ -90,6 +92,8 @@ pub fn get_model(
         let value = config["layer_norm_epsilon"].as_f64().unwrap() as f32;
         TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
     };
+
+    let n_embd_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![n_embd as f32])?;
 
     let c1 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715])?;
 
@@ -143,7 +147,7 @@ pub fn get_model(
         for row in 0..n_ctx {
             let mut colmaj = Vec::with_capacity(n_embd);
             for col in 0..n_embd {
-                colmaj.push(*tensors["wte.weight"].get(&[row, col])?);
+                colmaj.push(*tensors["wpe.weight"].get(&[row, col])?);
             }
             let embd_vec = TypedTensor::<f32>::from_vec_col_major(vec![n_embd, 1], colmaj)?;
             embd_vecs.push(embd_vec);
@@ -214,6 +218,7 @@ pub fn get_model(
         n_layer,
         vocab_size,
         e,
+        n_embd_as_tensor,
         c1,
         c2,
         c3,
@@ -227,6 +232,37 @@ pub fn get_model(
     };
     Ok(model)
 }
+
+/// The transformer for the GPT-2 architecture.
+pub fn transform(
+    cached_k: &mut Vec<Vec<Vec<f32>>>,
+    cached_v: &mut Vec<Vec<Vec<f32>>>,
+    model: &Model,
+    id: usize,
+    pos: usize,
+    backend: &mut CpuBackend,
+) -> Result<TypedTensor<f32>, Box<dyn Error>> {
+    // ==== Embedding ====
+
+    let x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
+    println!("---- A ----");
+    show(&x)?;
+
+    for (i, (layer, (k_matrices, v_matrices))) in zip(&model.layers, zip(cached_k, cached_v)).enumerate() {
+        // ==== Masked Multi-Head Attention ====
+
+        let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
+        if i == 0 { println!("---- B ----"); show(&y)?; }
+
+        // Rust's variable shadowing is nice!
+        let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
+        if i == 0 { println!("---- C ----"); show(&y)?; }
+    }
+    
+    let dummy = TypedTensor::<f32>::from_vec_col_major(vec![], vec![2.269])?;
+    Ok(dummy)
+}
+
 
 /*
 /// The transformer for the GPT-2 architecture.
@@ -539,14 +575,33 @@ pub fn transform(
 
     Ok(x29)
 }
+*/
 
 fn layer_norm(
-    tensor: &TypedTensor<f32>,
-    weight: &TypedTensor<f32>,
-    bias: &TypedTensor<f32>,
-    config: &Config,
+    x: &TypedTensor<f32>,
+    g: &TypedTensor<f32>,
+    t: &TypedTensor<f32>,
+    model: &Model,
     backend: &mut tenferro_cpu::CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
+    // mean(x) = sum(x) / n_embd
+    let mean_x = x.reduce_sum(&[0], backend)?.div(&model.n_embd_as_tensor, backend)?;
+
+    // diff(x) = x .- mean(x)
+    let diff_x = x.sub(&mean_x, backend)?;
+
+    // var(x, corrected = false) = sum(diff(x) .^ 2) / n_embd
+    let var_x = diff_x.mul(&diff_x, backend)?.reduce_sum(&[0], backend)?.div(&model.n_embd_as_tensor, backend)?;
+
+    // √(var(x, corrected = false) + e)
+    let denom = var_x.add(&model.e, backend)?.sqrt(backend)?;
+
+    // (x .- mean(x)) ./ √(var(x, corrected = false) + e) .* g + t
+    let x = diff_x.div(&denom, backend)?.mul(&g, backend)?.add(&t, backend)?;
+
+    Ok(x)
+
+    /*
     // n_embd
     let x0 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![config.n_embd as f32])?;
 
@@ -583,8 +638,8 @@ fn layer_norm(
         .add(bias, backend)?;
 
     Ok(x6)
+    */
 }
-*/
 
 /// Pretty-print a 2D tensor for debug.
 #[allow(dead_code)]

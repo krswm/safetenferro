@@ -128,13 +128,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ==== Inference ====
 
     let mut utf8_buffer = Vec::new();
-    let mut cached_k: Vec<Vec<TypedTensor<f32>>> = Vec::new();
-    let mut cached_v: Vec<Vec<TypedTensor<f32>>> = Vec::new();
+    /*
+    let mut cached_k = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
+    let mut cached_v = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
+    */
 
+    let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_embd / model.n_head]; model.n_layer];
+    let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_embd / model.n_head]; model.n_layer];
+
+    let mut backend = CpuBackend::new();
     for (pos, id) in ids.into_iter().enumerate() {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
         print!("\x1b[1;90m{decoded}\x1b[22;39m");
         std::io::stdout().flush()?;
+        transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
+        return Err("Stop here!!!".into());
     }
 
     /*
