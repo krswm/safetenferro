@@ -54,7 +54,11 @@ pub struct Model {
     pub n_head: usize,
     pub n_layer: usize,
     pub vocab_size: usize,
-    pub e: f32,
+    pub e: TypedTensor<f32>,
+    pub c1: TypedTensor<f32>,
+    pub c2: TypedTensor<f32>,
+    pub c3: TypedTensor<f32>,
+    pub c4: TypedTensor<f32>,
     pub id_embd_vecs: Vec<TypedTensor<f32>>,
     pub pos_embd_vecs: Vec<TypedTensor<f32>>,
     pub layers: Vec<Layer>,
@@ -81,7 +85,19 @@ pub fn get_model(
     let n_head = config["n_head"].as_u64().unwrap() as usize;
     let n_layer = config["n_layer"].as_u64().unwrap() as usize;
     let vocab_size = config["vocab_size"].as_u64().unwrap() as usize;
-    let e = config["layer_norm_epsilon"].as_f64().unwrap() as f32;
+
+    let e = {
+        let value = config["layer_norm_epsilon"].as_f64().unwrap() as f32;
+        TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+    };
+
+    let c1 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715])?;
+
+    let c2 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![(2.0 / PI).sqrt()])?;
+
+    let c3 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![1.0])?;
+
+    let c4 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.5])?;
 
     let mut backend = CpuBackend::new();
 
@@ -198,6 +214,10 @@ pub fn get_model(
         n_layer,
         vocab_size,
         e,
+        c1,
+        c2,
+        c3,
+        c4,
         id_embd_vecs,
         pos_embd_vecs,
         layers,
@@ -564,6 +584,7 @@ fn layer_norm(
 
     Ok(x6)
 }
+*/
 
 /// Pretty-print a 2D tensor for debug.
 #[allow(dead_code)]
@@ -602,4 +623,3 @@ fn show(tensor: &TypedTensor<f32>) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-*/
