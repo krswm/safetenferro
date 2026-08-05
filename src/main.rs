@@ -114,20 +114,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         transformer::get_model(tensors, config)?
     };
 
-    /*
     // ==== Tokenization ====
 
     let mut ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
     if ids.len() == 0 {
         println!("Your prompt should not be empty.");
         return Ok(());
-    } else if ids.len() >= config.n_ctx {
+    } else if ids.len() >= model.n_ctx {
         println!("Your prompt exceeds the context length. Try shorter prompt.");
         return Ok(());
     }
 
     // ==== Inference ====
 
+    let mut utf8_buffer = Vec::new();
+    let mut cached_k: Vec<Vec<TypedTensor<f32>>> = Vec::new();
+    let mut cached_v: Vec<Vec<TypedTensor<f32>>> = Vec::new();
+
+    for (pos, id) in ids.into_iter().enumerate() {
+        let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+        print!("\x1b[1;90m{decoded}\x1b[22;39m");
+        std::io::stdout().flush()?;
+    }
+
+    /*
     print!("\x1b[1;90m{}\x1b[22;39m", &args[2]);
     std::io::stdout().flush()?;
 
@@ -153,14 +163,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
     */
-
-    // I want to move the ownership of tensors from `tensors` to `model`. Can I?
-    // So I'll test that. I'll simulate a tensor operation here.
-    let mut backend = CpuBackend::new();
-    let foo = TypedTensor::<f32>::from_vec_col_major(vec![], vec![2.269])?;
-    model.gf.add(&foo, &mut backend);
-    // OK, I understand, I need a `clone` on `get_model`, instead.
-    model.gf.mul(&foo, &mut backend);
 
     Ok(())
 }
