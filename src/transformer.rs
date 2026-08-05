@@ -33,6 +33,21 @@ pub struct Config {
 }
 */
 
+pub struct Layer {
+    pub g1: TypedTensor<f32>,
+    pub t1: TypedTensor<f32>,
+    pub w11: TypedTensor<f32>,
+    pub b11: TypedTensor<f32>,
+    pub w12: TypedTensor<f32>,
+    pub b12: TypedTensor<f32>,
+    pub g2: TypedTensor<f32>,
+    pub t2: TypedTensor<f32>,
+    pub w21: TypedTensor<f32>,
+    pub b21: TypedTensor<f32>,
+    pub w22: TypedTensor<f32>,
+    pub b22: TypedTensor<f32>,
+}
+
 pub struct Model {
     pub n_ctx: usize,
     pub n_embd: usize,
@@ -42,6 +57,7 @@ pub struct Model {
     pub e: f32,
     pub wte: TypedTensor<f32>,
     pub wpe: TypedTensor<f32>,
+    pub layers: Vec<Layer>,
     pub gf: TypedTensor<f32>,
     pub tf: TypedTensor<f32>,
 }
@@ -81,6 +97,48 @@ pub fn get_model(
     let wpe = tensors["wpe.weight"].transpose(&[1, 0], &mut backend)?;
     validate_shape(&wpe, [n_embd, n_ctx])?;
 
+    let layers = {
+        let mut layers = Vec::with_capacity(n_layer);
+        for i in 0..n_layer {
+            // Btw, g stands for gamma and t stands for beta (b and e are already taken!)
+            // Pytorch etc. uses these greek letters
+            // The original paper of layernorm uses latin g and b maybe gain and bias
+            // The greek letters corresponds to the latin letters g and b.
+            
+            let g1 = tensors[&format!("h.{i}.ln_1.weight")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let t1 = tensors[&format!("h.{i}.ln_1.bias")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let w11 = tensors[&format!("h.{i}.attn.c_attn.weight")].transpose(&[1, 0], &mut backend)?;
+            validate_shape(&w11, [n_embd * 3, n_embd])?;
+
+            let b11 = tensors[&format!("h.{i}.attn.c_attn.bias")].reshape(&[n_embd * 3, 1], &mut backend)?;
+
+            let w12 = tensors[&format!("h.{i}.attn.c_proj.weight")].transpose(&[1, 0], &mut backend)?;
+            validate_shape(&w12, [n_embd, n_embd])?;
+
+            let b12 = tensors[&format!("h.{i}.attn.c_proj.bias")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let g2 = tensors[&format!("h.{i}.ln_2.weight")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let t2 = tensors[&format!("h.{i}.ln_2.bias")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let w21 = tensors[&format!("h.{i}.mlp.c_fc.weight")].transpose(&[1, 0], &mut backend)?;
+            validate_shape(&w21, [n_embd * 4, n_embd])?;
+
+            let b21 = tensors[&format!("h.{i}.mlp.c_fc.bias")].reshape(&[n_embd * 4, 1], &mut backend)?;
+
+            let w22 = tensors[&format!("h.{i}.mlp.c_proj.weight")].transpose(&[1, 0], &mut backend)?;
+            validate_shape(&w22, [n_embd, n_embd * 4])?;
+
+            let b22 = tensors[&format!("h.{i}.mlp.c_proj.bias")].reshape(&[n_embd, 1], &mut backend)?;
+
+            let layer = Layer { g1, t1, w11, b11, w12, b12, g2, t2, w21, b21, w22, b22 };
+            layers.push(layer);
+        }
+        layers
+    };
+
     // If I remember correctly
     // tenferro raises RankMismatch
     // when I try (TypedTensor with shape [a, b]) matmul (TypedTensor with shape [a]).
@@ -101,6 +159,7 @@ pub fn get_model(
         e,
         wte,
         wpe,
+        layers,
         gf,
         tf,
     };
