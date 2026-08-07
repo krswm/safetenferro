@@ -249,21 +249,22 @@ pub fn transform(
     backend: &mut CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // ==== Embedding ====
+    println!("[I]");
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
-    println!("---- A ----");
-    show(&x)?;
 
     for (i, (layer, (k_matrices, v_matrices))) in zip(&model.layers, zip(cached_k, cached_v)).enumerate() {
+        println!("[J]");
         // ==== Masked Multi-Head Attention ====
 
+        println!("[M]");
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
-         { println!("---- B {i} ----"); show(&y)?; }
 
+        println!("[N]");
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
-        if i == 0 { println!("---- C ----"); show(&y)?; }
 
+        println!("[O]");
         let host_data = y.host_data()?;
         let mut j = 0;
         let q_vectors = {
@@ -290,8 +291,8 @@ pub fn transform(
             }
             vectors
         };
-        if i == 0 { println!("---- D ----"); println!("{:?}", v_vectors[9]); }
 
+        println!("[P]");
         let qs = {
             let mut qs = Vec::with_capacity(model.n_head);
             for q_vector in q_vectors {
@@ -300,12 +301,14 @@ pub fn transform(
             }
             qs
         };
+        println!("[a]");
 
         // Utilize the fact that tenferro is col major
         // so extending a new column is just appending to col major.
         for (k_matrix, k_vector) in zip(&mut *k_matrices, k_vectors) {
             k_matrix.extend_from_slice(k_vector);
         }
+        println!("[b]");
         let ks = {
             let mut ks = Vec::with_capacity(model.n_head);
             for k_matrix in k_matrices {
@@ -314,11 +317,12 @@ pub fn transform(
             }
             ks
         };
-        if i == 0 { println!("---- E ----"); show(&ks[0])?; }
 
+        println!("[c]");
         for (v_matrix, v_vector) in zip(&mut *v_matrices, v_vectors) {
             v_matrix.extend_from_slice(v_vector);
         }
+        println!("[d]");
         let vs = {
             let mut vs = Vec::with_capacity(model.n_head);
             for v_matrix in v_matrices {
@@ -327,8 +331,8 @@ pub fn transform(
             }
             vs
         };
-        if i == 0 { println!("---- F ----"); show(&vs[10])?; }
 
+        println!("[Q]");
         let y = {
             let mut attention = Vec::with_capacity(model.n_embd);
             for (q, (k, v)) in zip(qs, zip(ks, vs)) {
@@ -350,20 +354,19 @@ pub fn transform(
             TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd, 1], attention)?
         };
 
-        if i == 0 { println!("---- G ----"); show(&y)?; }
 
+        println!("[R]");
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
-        if i == 0 { println!("---- H ----"); show(&y)?; }
 
+        println!("[S]");
         x = x.add(&y, backend)?;
-        if i == 0 { println!("---- I ----"); show(&x)?; }
 
+        println!("[K]");
         // ==== Feed Forward ====
 
         let y = layer_norm(&x, &layer.g2, &layer.t2, model, backend)?;
 
         let y = layer.w21.matmul(&y, backend)?.add(&layer.b21, backend)?;
-        if i == 0 { println!("---- J ----"); show(&y)?; }
 
         let y = y
             .mul(&y, backend)?
@@ -375,23 +378,19 @@ pub fn transform(
             .add(&model.c3, backend)?
             .mul(&y, backend)?
             .mul(&model.c4, backend)?;
-        if i == 0 { println!("---- L ----"); show(&y)?; }
 
         let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
 
         x = x.add(&y, backend)?;
-        { println!("---- M {i} ----"); show(&x)?; }
     }
 
-    { println!("---- P ----"); show(&x)?; }
+    println!("[L]");
 
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
-    { println!("---- O ----"); show(&x)?; }
 
     x = model.wte_transposed.matmul(&x, backend)?;
 
 
-    { println!("---- N ----"); show(&x)?; }
     Ok(x)
 }
 

@@ -137,12 +137,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
 
     let mut backend = CpuBackend::new();
-    for (pos, id) in ids.into_iter().enumerate() {
+    for (pos, id) in ids[0..(ids.len() - 1)].into_iter().enumerate() {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
         print!("\x1b[1;90m{decoded}\x1b[22;39m");
         std::io::stdout().flush()?;
-        transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
-        return Err("Stop here!!!".into());
+        println!("[A]");
+        transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
+        println!("[B]");
+    }
+    println!("[C]");
+    let mut id = ids[ids.len() - 1];
+    println!("[D]");
+    let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+    println!("[E]");
+    print!("\x1b[1;90m{decoded}\x1b[22;39m");
+    println!("[F]");
+    for pos in (ids.len() - 1)..model.n_ctx {
+        println!("[G]");
+        let logits = transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
+        println!("[H]");
+
+        // Greedy sampling: Choose the token with the highest probability.
+        id = logits
+            .host_data()?
+            .iter()
+            .enumerate()
+            .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
+            .map(|(id, _)| id)
+            .unwrap();
+
+        let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+        print!("\x1b[1m{decoded}\x1b[22m");
     }
 
     /*
