@@ -119,10 +119,22 @@ function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
     Model(n_ctx, n_embd, n_head, n_layer, vocab_size, e, wte, wpe, layers, gf, tf)
 end
 
+# Numerically stable than naive exp(x) / sum(x).
+function softmax(x::Vector{Float32})::Vector{Float32}
+    x = exp.(x .- maximum(x))
+    x / sum(x)
+end
+
 # The paper that introduced layer norm uses uncorrected variance.
 # https://arxiv.org/abs/1607.06450
-layer_norm(x::Vector{Float32}, g::Vector{Float32}, t::Vector{Float32}, e::Float32) =
+function layernorm(
+    x::Vector{Float32},
+    g::Vector{Float32},
+    t::Vector{Float32},
+    e::Float32,
+)::Vector{Float32}
     g .* (x .- mean(x)) ./ √(var(x, corrected = false) + e) + t
+end
 
 tshow(tensor) = show(IOContext(stdout, :limit => true), "text/plain", tensor)
 
@@ -144,34 +156,38 @@ function transform!(
     for (i, (layer, k_matrices, v_matrices)) ∈ enumerate(zip(model.layers, cached_k, cached_v))
         #### Masked Multi-Head Attention ####
 
-        y = layer_norm(x, layer.g1, layer.t1, model.e)
+        y = layernorm(x, layer.g1, layer.t1, model.e)
         if i == 1; println("---- B ----"); y |> tshow; end
 
         y = layer.w11 * y + layer.b11
         if i == 1; println("---- C ----"); y |> tshow; end
 
-        q_vectors, k_vectors, v_vectors = (
-            Iterators.partition(chunk, model.n_embd ÷ model.n_head) for
-            chunk ∈ Iterators.partition(y, model.n_embd)
+        q_vectors, k_vectors, v_vectors = Iterators.partition.(
+            Iterators.partition(y, model.n_embd),
+            model.n_embd ÷ model.n_head,
         )
+        if i == 1; println("---- D ----"); collect(vec.(v_vectors))[10] |> tshow; end
         k_matrices[:] = hcat.(k_matrices, k_vectors)
+        if i == 1; println("---- E ----"); k_matrices[1] |> tshow; end
         v_matrices[:] = hcat.(v_matrices, v_vectors)
-        y = (
-            begin
-                z = k' * q ./ √Float32(model.n_embd ÷ model.n_head)
-                z = exp.(z .- maximum(z))
-                v * z ./ sum(z)
-            end for (q, k, v) ∈ zip(q_vectors, k_matrices, v_matrices)
-        )
-        y = vcat(y...)
+        if i == 1; println("---- F ----"); v_matrices[11] |> tshow; end
+        attention =
+            v_matrices .* softmax.(
+                transpose.(k_matrices) .* q_vectors ./
+                √Float32(model.n_embd ÷ model.n_head),
+            )
+        y = vcat(attention...)
+        if i == 1; println("---- G ----"); y |> tshow; end
 
         y = layer.w12 * y + layer.b12
+        if i == 1; println("---- H ----"); y |> tshow; end
 
         x += y
+        if i == 1; println("---- I ----"); y |> tshow; end
 
         #### Feed Forward ####
 
-        y = layer_norm(x, layer.g2, layer.t2, model.e)
+        y = layernorm(x, layer.g2, layer.t2, model.e)
 
         y = layer.w21 * y + layer.b21
 
@@ -186,7 +202,7 @@ function transform!(
 
     #### Projection ####
 
-    x = layer_norm(x, model.gf, model.tf, model.e)
+    x = layernorm(x, model.gf, model.tf, model.e)
 
     model.wte' * x
 end

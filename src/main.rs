@@ -133,8 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cached_v = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
     */
 
-    let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_embd / model.n_head]; model.n_layer];
-    let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_embd / model.n_head]; model.n_layer];
+    let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
+    let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
 
     let mut backend = CpuBackend::new();
     for (pos, id) in ids.into_iter().enumerate() {

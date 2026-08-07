@@ -57,6 +57,7 @@ pub struct Model {
     pub vocab_size: usize,
     pub e: TypedTensor<f32>,
     pub n_embd_as_tensor: TypedTensor<f32>,
+    pub head_size_as_tensor: TypedTensor<f32>,
     pub c1: TypedTensor<f32>,
     pub c2: TypedTensor<f32>,
     pub c3: TypedTensor<f32>,
@@ -94,6 +95,8 @@ pub fn get_model(
     };
 
     let n_embd_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![n_embd as f32])?;
+
+    let head_size_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![(n_embd / n_head) as f32])?;
 
     let c1 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715])?;
 
@@ -219,6 +222,7 @@ pub fn get_model(
         vocab_size,
         e,
         n_embd_as_tensor,
+        head_size_as_tensor,
         c1,
         c2,
         c3,
@@ -257,6 +261,100 @@ pub fn transform(
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
         if i == 0 { println!("---- C ----"); show(&y)?; }
+
+        let host_data = y.host_data()?;
+        let mut j = 0;
+        let q_vectors = {
+            let mut vectors = Vec::with_capacity(model.n_head);
+            for i_head in 0..model.n_head {
+                vectors.push(&host_data[j..(j + model.n_embd / model.n_head)]);
+                j += model.n_embd / model.n_head;
+            }
+            vectors
+        };
+        let k_vectors = {
+            let mut vectors = Vec::with_capacity(model.n_head);
+            for i_head in 0..model.n_head {
+                vectors.push(&host_data[j..(j + model.n_embd / model.n_head)]);
+                j += model.n_embd / model.n_head;
+            }
+            vectors
+        };
+        let v_vectors = {
+            let mut vectors = Vec::with_capacity(model.n_head);
+            for i_head in 0..model.n_head {
+                vectors.push(&host_data[j..(j + model.n_embd / model.n_head)]);
+                j += model.n_embd / model.n_head;
+            }
+            vectors
+        };
+        if i == 0 { println!("---- D ----"); println!("{:?}", v_vectors[9]); }
+
+        let qs = {
+            let mut qs = Vec::with_capacity(model.n_head);
+            for q_vector in q_vectors {
+                let q = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, 1], q_vector.to_vec())?;
+                qs.push(q);
+            }
+            qs
+        };
+
+        // Utilize the fact that tenferro is col major
+        // so extending a new column is just appending to col major.
+        for (k_matrix, k_vector) in zip(&mut *k_matrices, k_vectors) {
+            k_matrix.extend_from_slice(k_vector);
+        }
+        let ks = {
+            let mut ks = Vec::with_capacity(model.n_head);
+            for k_matrix in k_matrices {
+                let k = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, pos + 1], k_matrix.to_vec())?;
+                ks.push(k);
+            }
+            ks
+        };
+        if i == 0 { println!("---- E ----"); show(&ks[0])?; }
+
+        for (v_matrix, v_vector) in zip(&mut *v_matrices, v_vectors) {
+            v_matrix.extend_from_slice(v_vector);
+        }
+        let vs = {
+            let mut vs = Vec::with_capacity(model.n_head);
+            for v_matrix in v_matrices {
+                let v = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, pos + 1], v_matrix.to_vec())?;
+                vs.push(v);
+            }
+            vs
+        };
+        if i == 0 { println!("---- F ----"); show(&vs[10])?; }
+
+        let y = {
+            let mut attention = Vec::with_capacity(model.n_embd);
+            for (q, (k, v)) in zip(qs, zip(ks, vs)) {
+                let z = k
+                    .transpose(&[1, 0], backend)?
+                    .matmul(&q, backend)?
+                    .div(&model.head_size_as_tensor, backend)?;
+                let mut z_max = -1.0e12;
+                for data in z.host_data()?.into_iter() {
+                    if *data > z_max {
+                        z_max = *data;
+                    }
+                }
+                let z_max = TypedTensor::<f32>::from_vec_col_major(vec![], vec![z_max])?;
+                let z = z.sub(&z_max, backend)?.exp(backend)?;
+                let mut z = v.matmul(&z, backend)?;
+                attention.extend(&*z.host_data_mut()?);
+            }
+            TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd, 1], attention)?
+        };
+
+        if i == 0 { println!("---- G ----"); show(&y)?; }
+
+        let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
+        if i == 0 { println!("---- H ----"); show(&y)?; }
+
+        let x = x.add(&y, backend)?;
+        if i == 0 { println!("---- I ----"); show(&y)?; }
     }
     
     let dummy = TypedTensor::<f32>::from_vec_col_major(vec![], vec![2.269])?;
