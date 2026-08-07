@@ -150,65 +150,50 @@ function transform!(
 
     # ids are 0-based. Julia is 1-based.
     x = model.wte[:, id+1] + model.wpe[:, pos]
-    println("---- A ----")
-    x |> tshow
 
     for (i, (layer, k_matrices, v_matrices)) ∈ enumerate(zip(model.layers, cached_k, cached_v))
         #### Masked Multi-Head Attention ####
 
         y = layernorm(x, layer.g1, layer.t1, model.e)
-        println("---- B $i ----"); y |> tshow
 
         y = layer.w11 * y + layer.b11
-        if i == 1; println("---- C ----"); y |> tshow; end
 
         q_vectors, k_vectors, v_vectors = Iterators.partition.(
             Iterators.partition(y, model.n_embd),
             model.n_embd ÷ model.n_head,
         )
-        if i == 1; println("---- D ----"); collect(vec.(v_vectors))[10] |> tshow; end
         k_matrices[:] = hcat.(k_matrices, k_vectors)
-        if i == 1; println("---- E ----"); k_matrices[1] |> tshow; end
         v_matrices[:] = hcat.(v_matrices, v_vectors)
-        if i == 1; println("---- F ----"); v_matrices[11] |> tshow; end
         attention =
             v_matrices .* softmax.(
                 transpose.(k_matrices) .* q_vectors ./
                 √Float32(model.n_embd ÷ model.n_head),
             )
         y = vcat(attention...)
-        if i == 1; println("---- G ----"); y |> tshow; end
 
         y = layer.w12 * y + layer.b12
-        if i == 1; println("---- H ----"); y |> tshow; end
 
         x += y
-        if i == 1; println("---- I ----"); x |> tshow; end
 
         #### Feed Forward ####
 
         y = layernorm(x, layer.g2, layer.t2, model.e)
 
         y = layer.w21 * y + layer.b21
-        if i == 1; println("---- J ----"); y |> tshow; end
 
         # This formula is based on the paper that introduced GELU.
         # https://arxiv.org/abs/1606.08415
         y = (tanh.((y .^ 3 * 0.044715f0 + y) * √(2.0f0 / π)) .+ 1.0f0) .* y * 0.5f0
-        if i == 1; println("---- L ----"); y |> tshow; end
 
         y = layer.w22 * y + layer.b22
 
         x += y
-        println("---- M $i ----"); x |> tshow
     end
 
     #### Projection ####
     # 
-    println("---- P ----"); x |> tshow
 
     x = layernorm(x, model.gf, model.tf, model.e)
-    println("---- O ----"); x |> tshow
 
     x = model.wte' * x
     println("---- N ----"); x |> tshow

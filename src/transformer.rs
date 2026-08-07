@@ -249,22 +249,17 @@ pub fn transform(
     backend: &mut CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // ==== Embedding ====
-    println!("[I]");
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
 
     for (i, (layer, (k_matrices, v_matrices))) in zip(&model.layers, zip(cached_k, cached_v)).enumerate() {
-        println!("[J]");
         // ==== Masked Multi-Head Attention ====
 
-        println!("[M]");
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
 
-        println!("[N]");
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
 
-        println!("[O]");
         let host_data = y.host_data()?;
         let mut j = 0;
         let q_vectors = {
@@ -292,7 +287,6 @@ pub fn transform(
             vectors
         };
 
-        println!("[P]");
         let qs = {
             let mut qs = Vec::with_capacity(model.n_head);
             for q_vector in q_vectors {
@@ -301,14 +295,12 @@ pub fn transform(
             }
             qs
         };
-        println!("[a]");
 
         // Utilize the fact that tenferro is col major
         // so extending a new column is just appending to col major.
         for (k_matrix, k_vector) in zip(&mut *k_matrices, k_vectors) {
             k_matrix.extend_from_slice(k_vector);
         }
-        println!("[b]");
         let ks = {
             let mut ks = Vec::with_capacity(model.n_head);
             for k_matrix in k_matrices {
@@ -318,11 +310,9 @@ pub fn transform(
             ks
         };
 
-        println!("[c]");
         for (v_matrix, v_vector) in zip(&mut *v_matrices, v_vectors) {
             v_matrix.extend_from_slice(v_vector);
         }
-        println!("[d]");
         let vs = {
             let mut vs = Vec::with_capacity(model.n_head);
             for v_matrix in v_matrices {
@@ -332,7 +322,6 @@ pub fn transform(
             vs
         };
 
-        println!("[Q]");
         let y = {
             let mut attention = Vec::with_capacity(model.n_embd);
             for (q, (k, v)) in zip(qs, zip(ks, vs)) {
@@ -355,13 +344,10 @@ pub fn transform(
         };
 
 
-        println!("[R]");
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
 
-        println!("[S]");
         x = x.add(&y, backend)?;
 
-        println!("[K]");
         // ==== Feed Forward ====
 
         let y = layer_norm(&x, &layer.g2, &layer.t2, model, backend)?;
@@ -384,12 +370,12 @@ pub fn transform(
         x = x.add(&y, backend)?;
     }
 
-    println!("[L]");
 
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
     x = model.wte_transposed.matmul(&x, backend)?;
 
+    show(&x)?;
 
     Ok(x)
 }

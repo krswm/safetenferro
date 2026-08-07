@@ -141,21 +141,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
         print!("\x1b[1;90m{decoded}\x1b[22;39m");
         std::io::stdout().flush()?;
-        println!("[A]");
         transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
-        println!("[B]");
     }
-    println!("[C]");
     let mut id = ids[ids.len() - 1];
-    println!("[D]");
     let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-    println!("[E]");
     print!("\x1b[1;90m{decoded}\x1b[22;39m");
-    println!("[F]");
+    std::io::stdout().flush()?;
     for pos in (ids.len() - 1)..model.n_ctx {
-        println!("[G]");
         let logits = transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
-        println!("[H]");
 
         // Greedy sampling: Choose the token with the highest probability.
         id = logits
@@ -168,6 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
         print!("\x1b[1m{decoded}\x1b[22m");
+        std::io::stdout().flush()?;
     }
 
     /*
