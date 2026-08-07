@@ -43,7 +43,7 @@ struct Model
     tf::Vector{Float32}
 end
 
-function get_model(tensors::Dict{String,Array}, config::JSON.Object)::Model
+function get_model(tensors, config)::Model
     n_ctx = config["n_ctx"]
     n_embd = config["n_embd"]
     n_head = config["n_head"]
@@ -196,6 +196,5 @@ function transform!(
     x = layernorm(x, model.gf, model.tf, model.e)
 
     x = model.wte' * x
-    println("---- N ----"); x |> tshow
     x
 end

@@ -252,7 +252,7 @@ pub fn transform(
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
 
-    for (i, (layer, (k_matrices, v_matrices))) in zip(&model.layers, zip(cached_k, cached_v)).enumerate() {
+    for (i, layer) in zip(0..model.n_layer, &model.layers) {
         // ==== Masked Multi-Head Attention ====
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
@@ -298,24 +298,24 @@ pub fn transform(
 
         // Utilize the fact that tenferro is col major
         // so extending a new column is just appending to col major.
-        for (k_matrix, k_vector) in zip(&mut *k_matrices, k_vectors) {
-            k_matrix.extend_from_slice(k_vector);
+        for (j, k_vector) in k_vectors.into_iter().enumerate() {
+            cached_k[i][j].extend_from_slice(k_vector);
         }
         let ks = {
             let mut ks = Vec::with_capacity(model.n_head);
-            for k_matrix in k_matrices {
+            for k_matrix in &cached_k[i] {
                 let k = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, pos + 1], k_matrix.to_vec())?;
                 ks.push(k);
             }
             ks
         };
 
-        for (v_matrix, v_vector) in zip(&mut *v_matrices, v_vectors) {
-            v_matrix.extend_from_slice(v_vector);
+        for (j, v_vector) in v_vectors.into_iter().enumerate() {
+            cached_v[i][j].extend_from_slice(v_vector);
         }
         let vs = {
             let mut vs = Vec::with_capacity(model.n_head);
-            for v_matrix in v_matrices {
+            for v_matrix in &cached_v[i] {
                 let v = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, pos + 1], v_matrix.to_vec())?;
                 vs.push(v);
             }
@@ -337,6 +337,7 @@ pub fn transform(
                 }
                 let z_max = TypedTensor::<f32>::from_vec_col_major(vec![], vec![z_max])?;
                 let z = z.sub(&z_max, backend)?.exp(backend)?;
+                if (i == 0) { show(&z)?; }
                 let mut z = v.matmul(&z, backend)?;
                 attention.extend(&*z.host_data_mut()?);
             }
@@ -374,8 +375,6 @@ pub fn transform(
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
     x = model.wte_transposed.matmul(&x, backend)?;
-
-    show(&x)?;
 
     Ok(x)
 }

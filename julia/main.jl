@@ -90,10 +90,12 @@ function main()::Nothing
 
     begin_time = time_ns()
     for (pos, id) ∈ enumerate(ids[1:(end-1)])
-        decoded = decode_unique_encoding!(buffer, id_to_token[id])
-        printstyled(decoded, bold = true, color = :light_black)
+        # decoded = decode_unique_encoding!(buffer, id_to_token[id])
+        # printstyled(decoded, bold = true, color = :light_black)
         transform!(cached_k, cached_v, model, id, pos)
+        tshow(cached_k[1][1])
     end
+    error("Stop!!!")
     id = ids[end]
     decoded = decode_unique_encoding!(buffer, id_to_token[id])
     printstyled(decoded, bold = true, color = :light_black)

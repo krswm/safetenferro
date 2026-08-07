@@ -139,10 +139,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut backend = CpuBackend::new();
     for (pos, id) in ids[0..(ids.len() - 1)].into_iter().enumerate() {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-        print!("\x1b[1;90m{decoded}\x1b[22;39m");
-        std::io::stdout().flush()?;
+        // print!("\x1b[1;90m{decoded}\x1b[22;39m");
+        // std::io::stdout().flush()?;
+        println!();
         transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
+        println!("{:?}", cached_k[0][0]);
     }
+    return Err("Stop!!!".into());
     let mut id = ids[ids.len() - 1];
     let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
     print!("\x1b[1;90m{decoded}\x1b[22;39m");
