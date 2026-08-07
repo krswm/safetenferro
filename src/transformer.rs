@@ -208,7 +208,9 @@ pub fn get_model(
     // That means, I have to reshape the vectors to have the second index whose size is 1.
     let gf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
 
-    let tf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
+    // There was a typo!!
+    let tf = tensors["ln_f.bias"].reshape(&[n_embd, 1], &mut backend)?;
+    // Now fixed!
 
     // Matrix transposed transposed is just original matrix!
     let wte_transposed = tensors["wte.weight"].clone();
@@ -248,7 +250,7 @@ pub fn transform(
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // ==== Embedding ====
 
-    let x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
+    let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
     println!("---- A ----");
     show(&x)?;
 
@@ -256,7 +258,7 @@ pub fn transform(
         // ==== Masked Multi-Head Attention ====
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
-        if i == 0 { println!("---- B ----"); show(&y)?; }
+         { println!("---- B {i} ----"); show(&y)?; }
 
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
@@ -353,12 +355,44 @@ pub fn transform(
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
         if i == 0 { println!("---- H ----"); show(&y)?; }
 
-        let x = x.add(&y, backend)?;
-        if i == 0 { println!("---- I ----"); show(&y)?; }
+        x = x.add(&y, backend)?;
+        if i == 0 { println!("---- I ----"); show(&x)?; }
+
+        // ==== Feed Forward ====
+
+        let y = layer_norm(&x, &layer.g2, &layer.t2, model, backend)?;
+
+        let y = layer.w21.matmul(&y, backend)?.add(&layer.b21, backend)?;
+        if i == 0 { println!("---- J ----"); show(&y)?; }
+
+        let y = y
+            .mul(&y, backend)?
+            .mul(&y, backend)?
+            .mul(&model.c1, backend)?
+            .add(&y, backend)?
+            .mul(&model.c2, backend)?
+            .tanh(backend)?
+            .add(&model.c3, backend)?
+            .mul(&y, backend)?
+            .mul(&model.c4, backend)?;
+        if i == 0 { println!("---- L ----"); show(&y)?; }
+
+        let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
+
+        x = x.add(&y, backend)?;
+        { println!("---- M {i} ----"); show(&x)?; }
     }
-    
-    let dummy = TypedTensor::<f32>::from_vec_col_major(vec![], vec![2.269])?;
-    Ok(dummy)
+
+    { println!("---- P ----"); show(&x)?; }
+
+    x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
+    { println!("---- O ----"); show(&x)?; }
+
+    x = model.wte_transposed.matmul(&x, backend)?;
+
+
+    { println!("---- N ----"); show(&x)?; }
+    Ok(x)
 }
 
 

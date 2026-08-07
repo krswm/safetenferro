@@ -157,7 +157,7 @@ function transform!(
         #### Masked Multi-Head Attention ####
 
         y = layernorm(x, layer.g1, layer.t1, model.e)
-        if i == 1; println("---- B ----"); y |> tshow; end
+        println("---- B $i ----"); y |> tshow
 
         y = layer.w11 * y + layer.b11
         if i == 1; println("---- C ----"); y |> tshow; end
@@ -183,26 +183,34 @@ function transform!(
         if i == 1; println("---- H ----"); y |> tshow; end
 
         x += y
-        if i == 1; println("---- I ----"); y |> tshow; end
+        if i == 1; println("---- I ----"); x |> tshow; end
 
         #### Feed Forward ####
 
         y = layernorm(x, layer.g2, layer.t2, model.e)
 
         y = layer.w21 * y + layer.b21
+        if i == 1; println("---- J ----"); y |> tshow; end
 
         # This formula is based on the paper that introduced GELU.
         # https://arxiv.org/abs/1606.08415
         y = (tanh.((y .^ 3 * 0.044715f0 + y) * √(2.0f0 / π)) .+ 1.0f0) .* y * 0.5f0
+        if i == 1; println("---- L ----"); y |> tshow; end
 
         y = layer.w22 * y + layer.b22
 
         x += y
+        println("---- M $i ----"); x |> tshow
     end
 
     #### Projection ####
+    # 
+    println("---- P ----"); x |> tshow
 
     x = layernorm(x, model.gf, model.tf, model.e)
+    println("---- O ----"); x |> tshow
 
-    model.wte' * x
+    x = model.wte' * x
+    println("---- N ----"); x |> tshow
+    x
 end
