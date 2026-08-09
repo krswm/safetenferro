@@ -7,6 +7,13 @@ Now I'll do that with tenferro!
 I copied my Julia version in `julia` for my reference.
 Future me, delete it after completed!
 
+## 2026-08-09
+
+I rewrote my transformer.
+Now it uses KV-cache.
+The attention code is quite long now.
+I think it's time to use EinSum!
+
 # GPT-2 Inference with tenferro
 
 I built a GPT-2 inference engine from scratch in Rust.

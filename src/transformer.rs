@@ -21,6 +21,7 @@ use std::iter::zip;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
+use tenferro_einsum::TypedTensorEinsumExt;
 use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
 
 /*
@@ -242,8 +243,8 @@ pub fn get_model(
 
 /// The transformer for the GPT-2 architecture.
 pub fn transform(
-    cached_k: &mut Vec<Vec<Vec<f32>>>,
-    cached_v: &mut Vec<Vec<Vec<f32>>>,
+    cached_k: &mut Vec<Vec<f32>>,
+    cached_v: &mut Vec<Vec<f32>>,
     model: &Model,
     id: usize,
     pos: usize,
@@ -261,8 +262,22 @@ pub fn transform(
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
 
+        //   /\|
+        //   \/|
+        //     | ih
+
         let host_data = y.host_data()?;
         let mut j = 0;
+        let q = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, model.n_head], host_data[j..(j + model.n_embd)].to_vec())?;
+        j += model.n_embd;
+        cached_k[i].extend_from_slice(&host_data[j..(j + model.n_embd)]);
+        let k = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, model.n_head, pos + 1], cached_k[i].clone())?;
+        j += model.n_embd;
+        cached_v[i].extend_from_slice(&host_data[j..(j + model.n_embd)]);
+        let v = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, model.n_head, pos + 1], cached_v[i].clone())?;
+
+
+        /*
         let q_vectors = {
             let mut vectors = Vec::with_capacity(model.n_head);
             for i_head in 0..model.n_head {
@@ -322,7 +337,33 @@ pub fn transform(
             }
             vs
         };
+        */
 
+
+        // z_c = [k^T q]_{c}
+        //     = [k^T]_{ci} q_{i}
+        //     = k_{ic} q_{i}
+
+        // z_{hc} = [k^T q]_{hc}
+        //        = [k^T]_{chi} q_{ih}   <- (?)
+        //        = k_{ihc} q_{ih}       <- (?)
+
+        let z = [&k, &q].einsum("ihc,ih->hc", backend)?;
+
+        let z = z.mul(&model.head_size_as_tensor, backend)?;
+
+        // Numerically unstable :)
+        let z = z.exp(backend)?;
+
+        let x12 = z.reduce_sum(&[1], backend)?.reshape(&[model.n_head, pos + 1], backend)?;
+
+        let x13 = z.div(&x12, backend);
+
+        let z = [&v, &z].einsum("ihc,hc->ih", backend)?;
+
+        let z = z.reshape(&[model.n_embd, 1], backend)?;
+
+        /*
         let y = {
             let mut attention = Vec::with_capacity(model.n_embd);
             for (ii, (q, (k, v))) in zip(qs, zip(ks, vs)).enumerate() {
@@ -351,6 +392,7 @@ pub fn transform(
             }
             TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd, 1], attention)?
         };
+        */
 
 
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;

@@ -134,8 +134,32 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cached_v = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
     */
 
+    /*
     let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
     let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
+    */
+
+    // k and v are 3D tensors
+    // They have four indices
+    //   - i: 0..(n_embd / n_head)   The index inside a head vector
+    //   - h: 0..n_head              The index of head
+    //   - c: 0..pos                 The token position number
+    //                               (pos increases as inference goes so overall length of k and v also grows)
+    //   |
+    //   |/         \  /
+    //   |\ ihc      \/ ihc
+    //
+    // I have reason to put c last.
+    // Since tenferro is colmajor, concatting new matrix from the right
+    // is just appending it to the internal vector representation.
+    //
+    // I have reason to set i then h but not other way around
+    // This is because when I get q, k, v
+    // they're in the order like [k_(i = 0, h = 0), k_(i = 1, h = 0), ..., k_(i = last, h = last)]
+    // so I only have to do a reshape to get it
+
+    let mut cached_k= vec![Vec::<f32>::new(); model.n_layer];
+    let mut cached_v= vec![Vec::<f32>::new(); model.n_layer];
 
     let begin_time = Instant::now();
     let mut backend = CpuBackend::new();
