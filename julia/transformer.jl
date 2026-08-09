@@ -150,30 +150,55 @@ function transform!(
 
     # ids are 0-based. Julia is 1-based.
     x = model.wte[:, id+1] + model.wpe[:, pos]
+    println("==== B ===="); x |> tshow
 
     for (i, (layer, k_matrices, v_matrices)) ∈ enumerate(zip(model.layers, cached_k, cached_v))
         #### Masked Multi-Head Attention ####
 
         y = layernorm(x, layer.g1, layer.t1, model.e)
+        if i == 1; println("==== E ===="); y |> tshow; end
 
         y = layer.w11 * y + layer.b11
+        if i == 1; println("==== F ===="); y |> tshow; end
 
         q_vectors, k_vectors, v_vectors = Iterators.partition.(
             Iterators.partition(y, model.n_embd),
             model.n_embd ÷ model.n_head,
         )
+        q_vectors = collect(vec.(q_vectors))
+        if i == 1; println("==== q ===="); q_vectors[1] |> tshow; end
         k_matrices[:] = hcat.(k_matrices, k_vectors)
+        if i == 1; println("==== k ===="); k_matrices[1] |> tshow; end
         v_matrices[:] = hcat.(v_matrices, v_vectors)
+        if i == 1; println("==== v ===="); v_matrices[1] |> tshow; end
+
+        if i == 1;
+            q = q_vectors[1]
+            k = k_matrices[1]
+            v = v_matrices[1]
+            
+            z = transpose(k) * q
+            println("==== e ===="); z |> tshow
+
+            println("====   ====")
+            println(√Float32(model.n_embd ÷ model.n_head))
+        end
+
+        
         attention =
             v_matrices .* softmax.(
                 transpose.(k_matrices) .* q_vectors ./
                 √Float32(model.n_embd ÷ model.n_head),
             )
         y = vcat(attention...)
+        if i == 1; println("==== G ===="); y |> tshow; end
 
         y = layer.w12 * y + layer.b12
+        if i == 1; println("==== H ===="); y |> tshow; end
 
         x += y
+
+        if i == 1; println("==== C ===="); x |> tshow; end
 
         #### Feed Forward ####
 
@@ -188,6 +213,8 @@ function transform!(
         y = layer.w22 * y + layer.b22
 
         x += y
+
+        if i == 1; println("==== D ===="); x |> tshow; end
     end
 
     #### Projection ####
@@ -196,5 +223,8 @@ function transform!(
     x = layernorm(x, model.gf, model.tf, model.e)
 
     x = model.wte' * x
+
+    println("==== A ===="); x |> tshow
+    
     x
 end

@@ -93,7 +93,6 @@ function main()::Nothing
         # decoded = decode_unique_encoding!(buffer, id_to_token[id])
         # printstyled(decoded, bold = true, color = :light_black)
         transform!(cached_k, cached_v, model, id, pos)
-        tshow(cached_k[1][1])
     end
     error("Stop!!!")
     id = ids[end]

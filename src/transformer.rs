@@ -96,7 +96,8 @@ pub fn get_model(
 
     let n_embd_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![n_embd as f32])?;
 
-    let head_size_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![(n_embd / n_head) as f32])?;
+    // I forgot sqrt!!!
+    let head_size_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![1.0 / ((n_embd as f32) / (n_head as f32)).sqrt()])?;
 
     let c1 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715])?;
 
@@ -251,14 +252,17 @@ pub fn transform(
     // ==== Embedding ====
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
+    println!("==== B ===="); show(&x)?;
 
     for (i, layer) in zip(0..model.n_layer, &model.layers) {
         // ==== Masked Multi-Head Attention ====
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
+        if i == 0 { println!("==== E ===="); show(&y)?; }
 
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
+        if i == 0 { println!("==== F ===="); show(&y)?; }
 
         let host_data = y.host_data()?;
         let mut j = 0;
@@ -295,6 +299,7 @@ pub fn transform(
             }
             qs
         };
+        if i == 0 { println!("==== q ===="); show(&qs[0])?; }
 
         // Utilize the fact that tenferro is col major
         // so extending a new column is just appending to col major.
@@ -309,6 +314,7 @@ pub fn transform(
             }
             ks
         };
+        if i == 0 { println!("==== k ===="); show(&ks[0])?; }
 
         for (j, v_vector) in v_vectors.into_iter().enumerate() {
             cached_v[i][j].extend_from_slice(v_vector);
@@ -321,14 +327,19 @@ pub fn transform(
             }
             vs
         };
+        if i == 0 { println!("==== v ===="); show(&vs[0])?; }
 
         let y = {
             let mut attention = Vec::with_capacity(model.n_embd);
-            for (q, (k, v)) in zip(qs, zip(ks, vs)) {
+            for (ii, (q, (k, v))) in zip(qs, zip(ks, vs)).enumerate() {
                 let z = k
                     .transpose(&[1, 0], backend)?
-                    .matmul(&q, backend)?
-                    .div(&model.head_size_as_tensor, backend)?;
+                    .matmul(&q, backend)?;
+                if i == 0 && ii == 0 { println!("==== e ===="); show(&z); }
+                if i == 0 && ii == 0 { println!("====   ===="); println!("{:?}", &model.head_size_as_tensor); }
+                let z = z
+                    .mul(&model.head_size_as_tensor, backend)?;
+                if i == 0 && ii == 0 { println!("==== a ===="); show(&z); }
                 let mut z_max = -1.0e12;
                 for data in z.host_data()?.into_iter() {
                     if *data > z_max {
@@ -337,17 +348,30 @@ pub fn transform(
                 }
                 let z_max = TypedTensor::<f32>::from_vec_col_major(vec![], vec![z_max])?;
                 let z = z.sub(&z_max, backend)?.exp(backend)?;
-                if (i == 0) { show(&z)?; }
-                let mut z = v.matmul(&z, backend)?;
+                if i == 0 && ii == 0 { println!("==== b ===="); show(&z); }
+
+                let x12 = z
+                    .reduce_sum(&[0], backend)?;
+
+                // softmax(x8) = exp.(x8 .- maximum(x8)) ./ sum(exp.(x8 .- max(x8)))
+                let x13 = z.div(&x12, backend)?;
+                if i == 0 && ii == 0 { println!("==== c ===="); show(&x13); }
+
+                let mut z = v.matmul(&x13, backend)?;
+                if i == 0 && ii == 0 { println!("==== d ===="); show(&z); }
                 attention.extend(&*z.host_data_mut()?);
             }
             TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd, 1], attention)?
         };
+        if i == 0 { println!("==== G ===="); show(&y)?; }
 
 
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
+        if i == 0 { println!("==== H ===="); show(&y)?; }
 
         x = x.add(&y, backend)?;
+
+        if i == 0 { println!("==== C ===="); show(&x)?; }
 
         // ==== Feed Forward ====
 
@@ -369,12 +393,16 @@ pub fn transform(
         let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
 
         x = x.add(&y, backend)?;
+
+        if i == 0 { println!("==== D ===="); show(&x)?; }
     }
 
 
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
     x = model.wte_transposed.matmul(&x, backend)?;
+
+    println!("==== A ===="); show(&x)?;
 
     Ok(x)
 }

@@ -143,7 +143,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         // std::io::stdout().flush()?;
         println!();
         transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
-        println!("{:?}", cached_k[0][0]);
     }
     return Err("Stop!!!".into());
     let mut id = ids[ids.len() - 1];
