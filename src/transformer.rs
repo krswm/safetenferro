@@ -252,17 +252,14 @@ pub fn transform(
     // ==== Embedding ====
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
-    println!("==== B ===="); show(&x)?;
 
     for (i, layer) in zip(0..model.n_layer, &model.layers) {
         // ==== Masked Multi-Head Attention ====
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
-        if i == 0 { println!("==== E ===="); show(&y)?; }
 
         // Rust's variable shadowing is nice!
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
-        if i == 0 { println!("==== F ===="); show(&y)?; }
 
         let host_data = y.host_data()?;
         let mut j = 0;
@@ -299,7 +296,6 @@ pub fn transform(
             }
             qs
         };
-        if i == 0 { println!("==== q ===="); show(&qs[0])?; }
 
         // Utilize the fact that tenferro is col major
         // so extending a new column is just appending to col major.
@@ -314,7 +310,6 @@ pub fn transform(
             }
             ks
         };
-        if i == 0 { println!("==== k ===="); show(&ks[0])?; }
 
         for (j, v_vector) in v_vectors.into_iter().enumerate() {
             cached_v[i][j].extend_from_slice(v_vector);
@@ -327,7 +322,6 @@ pub fn transform(
             }
             vs
         };
-        if i == 0 { println!("==== v ===="); show(&vs[0])?; }
 
         let y = {
             let mut attention = Vec::with_capacity(model.n_embd);
@@ -335,11 +329,8 @@ pub fn transform(
                 let z = k
                     .transpose(&[1, 0], backend)?
                     .matmul(&q, backend)?;
-                if i == 0 && ii == 0 { println!("==== e ===="); show(&z); }
-                if i == 0 && ii == 0 { println!("====   ===="); println!("{:?}", &model.head_size_as_tensor); }
                 let z = z
                     .mul(&model.head_size_as_tensor, backend)?;
-                if i == 0 && ii == 0 { println!("==== a ===="); show(&z); }
                 let mut z_max = -1.0e12;
                 for data in z.host_data()?.into_iter() {
                     if *data > z_max {
@@ -348,30 +339,24 @@ pub fn transform(
                 }
                 let z_max = TypedTensor::<f32>::from_vec_col_major(vec![], vec![z_max])?;
                 let z = z.sub(&z_max, backend)?.exp(backend)?;
-                if i == 0 && ii == 0 { println!("==== b ===="); show(&z); }
 
                 let x12 = z
                     .reduce_sum(&[0], backend)?;
 
                 // softmax(x8) = exp.(x8 .- maximum(x8)) ./ sum(exp.(x8 .- max(x8)))
                 let x13 = z.div(&x12, backend)?;
-                if i == 0 && ii == 0 { println!("==== c ===="); show(&x13); }
 
                 let mut z = v.matmul(&x13, backend)?;
-                if i == 0 && ii == 0 { println!("==== d ===="); show(&z); }
                 attention.extend(&*z.host_data_mut()?);
             }
             TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd, 1], attention)?
         };
-        if i == 0 { println!("==== G ===="); show(&y)?; }
 
 
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
-        if i == 0 { println!("==== H ===="); show(&y)?; }
 
         x = x.add(&y, backend)?;
 
-        if i == 0 { println!("==== C ===="); show(&x)?; }
 
         // ==== Feed Forward ====
 
@@ -394,7 +379,6 @@ pub fn transform(
 
         x = x.add(&y, backend)?;
 
-        if i == 0 { println!("==== D ===="); show(&x)?; }
     }
 
 
@@ -402,7 +386,6 @@ pub fn transform(
 
     x = model.wte_transposed.matmul(&x, backend)?;
 
-    println!("==== A ===="); show(&x)?;
 
     Ok(x)
 }

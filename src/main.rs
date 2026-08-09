@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
+use std::time::Instant;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
@@ -136,15 +137,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
     let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
 
+    let begin_time = Instant::now();
     let mut backend = CpuBackend::new();
     for (pos, id) in ids[0..(ids.len() - 1)].into_iter().enumerate() {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-        // print!("\x1b[1;90m{decoded}\x1b[22;39m");
-        // std::io::stdout().flush()?;
-        println!();
+        print!("\x1b[1;90m{decoded}\x1b[22;39m");
+        std::io::stdout().flush()?;
         transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
     }
-    return Err("Stop!!!".into());
     let mut id = ids[ids.len() - 1];
     let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
     print!("\x1b[1;90m{decoded}\x1b[22;39m");
@@ -165,6 +165,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         print!("\x1b[1m{decoded}\x1b[22m");
         std::io::stdout().flush()?;
     }
+    let sec = begin_time.elapsed().as_secs_f64();
+
+    println!();
+    println!("\x1b[90mTransformer processed {} tokens\x1b[39m", model.n_ctx);
+    println!("\x1b[90mTook {sec:.3} s | {:.3} tokens/s", (model.n_ctx as f64) / sec);
+    println!("\x1b[90m{} tokens prompted | {} tokens generated", ids.len(), model.n_ctx - ids.len() + 1);
 
     /*
     print!("\x1b[1;90m{}\x1b[22;39m", &args[2]);
