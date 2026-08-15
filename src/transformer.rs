@@ -200,6 +200,37 @@ pub fn get_model(
     Ok(model)
 }
 
+fn layer_norm(
+    x: &TypedTensor<f32>,
+    g: &TypedTensor<f32>,
+    t: &TypedTensor<f32>,
+    model: &Model,
+    backend: &mut tenferro_cpu::CpuBackend,
+) -> Result<TypedTensor<f32>, Box<dyn Error>> {
+    // mean(x) = sum(x) / n_embd
+    let mean = x.reduce_sum(&[0], backend)?.div(&model.c0, backend)?;
+
+    // x .- mean(x)
+    let numerator = x.sub(&mean, backend)?;
+
+    // var(x, corrected = false) = sum((x .- mean(x) .^ 2) / n_embd
+    let var = numerator
+        .mul(&numerator, backend)?
+        .reduce_sum(&[0], backend)?
+        .div(&model.c0, backend)?;
+
+    // √(var(x, corrected = false) + e)
+    let denominator = var.add(&model.e, backend)?.sqrt(backend)?;
+
+    // g .* (x .- mean(x)) ./ √(var(x, corrected = false) + e) + t
+    let x = g
+        .mul(&numerator, backend)?
+        .div(&denominator, backend)?
+        .add(t, backend)?;
+
+    Ok(x)
+}
+
 /// The transformer of the GPT-2 architecture.
 pub fn transform(
     k_cache_colmaj: &mut [Vec<f32>],
@@ -211,6 +242,7 @@ pub fn transform(
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // ==== Embedding ====
 
+    // x = model.wte[:, id+1] + model.wpe[:, pos]
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
 
     for (layer, (k_colmaj, v_colmaj)) in zip(
@@ -221,6 +253,7 @@ pub fn transform(
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
 
+        // y = layer.w11 * y + layer.b11
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
 
         let host_data = y.host_data()?;
@@ -230,23 +263,21 @@ pub fn transform(
             host_data[j..(j + model.n_embd)].to_vec(),
         )?;
         j += model.n_embd;
-        // TODO: I'm not satisfied with `clone` here. Can I improve it?
         k_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
         let k = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
-            k_colmaj.clone(),
+            k_colmaj.to_vec(),
         )?;
         j += model.n_embd;
         v_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
         let v = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
-            v_colmaj.clone(),
+            v_colmaj.to_vec(),
         )?;
 
-        let z = [&k, &q].einsum("ihc,ih->ch", backend)?;
-
-        // _{ch}
-        let z = z.mul(&model.c1, backend)?;
+        let z = [&k, &q]
+            .einsum("ihc,ih->ch", backend)?
+            .mul(&model.c1, backend)?;
 
         // _{h}
         let max_z = {
@@ -262,10 +293,7 @@ pub fn transform(
         };
 
         // _{ch}
-        let z = z.sub(&max_z, backend)?;
-
-        // _{ch}
-        let z = z.exp(backend)?;
+        let z = z.sub(&max_z, backend)?.exp(backend)?;
 
         // _{h}
         let x12 = z
@@ -275,20 +303,26 @@ pub fn transform(
         // _{ch}
         let x13 = z.div(&x12, backend)?;
 
-        let z = [&v, &x13].einsum("ihc,ch->ih", backend)?;
+        let y = [&v, &x13]
+            .einsum("ihc,ch->ih", backend)?
+            .reshape(&[model.n_embd, 1], backend)?;
 
-        let y = z.reshape(&[model.n_embd, 1], backend)?;
-
+        // y = layer.w12 * y + layer.b12
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
 
+        // x += y
         x = x.add(&y, backend)?;
 
         // ==== Feed Forward ====
 
         let y = layer_norm(&x, &layer.g2, &layer.t2, model, backend)?;
 
+        // y = layer.w21 * y + layer.b21
         let y = layer.w21.matmul(&y, backend)?.add(&layer.b21, backend)?;
 
+        // This formula is based on the paper that introduced GELU.
+        // https://arxiv.org/abs/1606.08415
+        // y = (tanh.((y .^ 3 * 0.044715f0 + y) * √(2.0f0 / π)) .+ 1.0f0) .* y * 0.5f0
         let y = y
             .mul(&y, backend)?
             .mul(&y, backend)?
@@ -300,45 +334,17 @@ pub fn transform(
             .mul(&y, backend)?
             .mul(&model.c5, backend)?;
 
+        // y = layer.w22 * y + layer.b22
         let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
 
+        // x += y
         x = x.add(&y, backend)?;
     }
 
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
+    // transpose(model.wte) * x
     x = model.wte_transposed.matmul(&x, backend)?;
-
-    Ok(x)
-}
-
-fn layer_norm(
-    x: &TypedTensor<f32>,
-    g: &TypedTensor<f32>,
-    t: &TypedTensor<f32>,
-    model: &Model,
-    backend: &mut tenferro_cpu::CpuBackend,
-) -> Result<TypedTensor<f32>, Box<dyn Error>> {
-    // mean(x) = sum(x) / n_embd
-    let mean_x = x.reduce_sum(&[0], backend)?.div(&model.c0, backend)?;
-
-    // diff(x) = x .- mean(x)
-    let diff_x = x.sub(&mean_x, backend)?;
-
-    // var(x, corrected = false) = sum(diff(x) .^ 2) / n_embd
-    let var_x = diff_x
-        .mul(&diff_x, backend)?
-        .reduce_sum(&[0], backend)?
-        .div(&model.c0, backend)?;
-
-    // √(var(x, corrected = false) + e)
-    let denom = var_x.add(&model.e, backend)?.sqrt(backend)?;
-
-    // (x .- mean(x)) ./ √(var(x, corrected = false) + e) .* g + t
-    let x = diff_x
-        .div(&denom, backend)?
-        .mul(g, backend)?
-        .add(t, backend)?;
 
     Ok(x)
 }
