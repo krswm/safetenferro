@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.len() != 3 {
         println!("GPT-2 Inference with tenferro");
         println!(
-            "Usage: \x1b[1mcargo run --release <path to model repository> <your prompt>\x1b[22m"
+            "Usage: \x1b[1m{} <path to model repository> <your prompt>\x1b[22m",
+            &args[0]
         );
         println!("You may have to enclose 'your prompt' with quotes.");
         return Ok(());
@@ -48,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let token_to_id: HashMap<String, usize> = serde_json::from_reader(reader)?;
         let id_to_token: HashMap<usize, String> = token_to_id
             .iter()
-            .map(|(key, value)| (*value, key.clone()))
+            .map(|(id, token)| (*token, id.clone()))
             .collect();
         (token_to_id, id_to_token)
     };
@@ -65,7 +66,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             if line.starts_with("#") {
                 continue;
             }
-
             let mut split = line.split(" ");
             let token0 = split.next().unwrap().to_string();
             let token1 = split.next().unwrap().to_string();
@@ -80,19 +80,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             let path = &format!("{}/model.safetensors", &args[1]);
             loader::load_safetensors(path)?
         };
-
         let config: HashMap<String, Value> = {
             let path = &format!("{}/config.json", &args[1]);
             let file = File::open(path)?;
             let reader = BufReader::new(file);
             serde_json::from_reader(reader)?
         };
-
         transformer::get_model(tensors, config)?
     };
 
     // ==== Tokenization ====
 
+    // Token IDs
     let ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
     if ids.is_empty() {
         println!("Your prompt should not be empty.");
@@ -104,45 +103,58 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Inference ====
 
-    let mut utf8_buffer = Vec::new();
-
-    // k and v are 3D tensors
-    // They have four indices
-    //   - i: 0..(n_embd / n_head)   The index inside a head vector
-    //   - h: 0..n_head              The index of head
-    //   - c: 0..pos                 The token position number
-    //                               (pos increases as inference goes so overall length of k and v also grows)
-    //   |
-    //   |/         \  /
-    //   |\ ihc      \/ ihc
+    // k and v are 3D tensors with indices (i, h, p).
     //
-    // I have reason to put c last.
-    // Since tenferro is colmajor, concatting new matrix from the right
-    // is just appending it to the internal vector representation.
+    // - i = 0..(n_embd / n_head)  Index for elements in a head vector
+    // - h = 0..n_head             Index for head vector
+    // - p = 0..(pos + 1)          Token position
     //
-    // I have reason to set i then h but not other way around
-    // This is because when I get q, k, v
-    // they're in the order like [k_(i = 0, h = 0), k_(i = 1, h = 0), ..., k_(i = last, h = last)]
-    // so I only have to do a reshape to get it
+    // `pos` increases by one for each transformer call, so overall lengths of k and v grow.
+    //
+    // I deliberately chose this order of indices from the fact that tenferro uses column-major.
+    //
+    // For each transformer layer, this program has to concatinate a new head-vector to the cached matrix.
+    // Since p is the last index, this program only has to extend the new head-vector
+    // to the column-major representation of the cached matrix.
+    //
+    // For each transformer layer, this program obtains a new head-vector.
+    // A head-vector is ordered like:
+    //   (i=0, h=0), (i=1, h=0), ..., (i=last, h=0), (i=0, h=1), (i=1, h=1), ...
+    // Since i is the first and h is the second indices, this program can extend the new head-vector
+    // to the column-major representation of the cached matrix without transposing.
+    let mut k_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
+    let mut v_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
 
-    let mut cached_k = vec![Vec::<f32>::new(); model.n_layer];
-    let mut cached_v = vec![Vec::<f32>::new(); model.n_layer];
+    let mut utf8_buffer: Vec<u8> = Vec::new();
 
-    let begin_time = Instant::now();
+    let performance_timer = Instant::now();
     let mut backend = CpuBackend::new();
-    for (pos, id) in ids[0..(ids.len() - 1)].iter().enumerate() {
+    for (pos, id) in ids[..(ids.len() - 1)].iter().enumerate() {
         let decoded = tokenizer::decode_unique_encoding(&id_to_token[id], &mut utf8_buffer);
         print!("\x1b[1;90m{decoded}\x1b[22;39m");
         std::io::stdout().flush()?;
-        transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
+        transformer::transform(
+            &mut k_cache_colmaj,
+            &mut v_cache_colmaj,
+            &model,
+            *id,
+            pos,
+            &mut backend,
+        )?;
     }
     let mut id = ids[ids.len() - 1];
     let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
     print!("\x1b[1;90m{decoded}\x1b[22;39m");
     std::io::stdout().flush()?;
     for pos in (ids.len() - 1)..model.n_ctx {
-        let logits =
-            transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
+        let logits = transformer::transform(
+            &mut k_cache_colmaj,
+            &mut v_cache_colmaj,
+            &model,
+            id,
+            pos,
+            &mut backend,
+        )?;
 
         // Greedy sampling: Choose the token with the highest probability.
         id = logits
@@ -157,7 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         print!("\x1b[1m{decoded}\x1b[22m");
         std::io::stdout().flush()?;
     }
-    let sec = begin_time.elapsed().as_secs_f64();
+    let performance_time = performance_timer.elapsed().as_secs_f64();
 
     println!();
     println!(
@@ -165,13 +177,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         model.n_ctx
     );
     println!(
-        "\x1b[90mTook {sec:.3} s | {:.3} tokens/s",
-        (model.n_ctx as f64) / sec
+        "\x1b[90mTook {performance_time:.3} s | {:.3} tokens/s",
+        (model.n_ctx as f64) / performance_time
     );
     println!(
         "\x1b[90m{} tokens prompted | {} tokens generated",
         ids.len(),
-        model.n_ctx - ids.len() + 1
+        model.n_ctx - ids.len() + 1 // There is an extra token.
     );
 
     Ok(())

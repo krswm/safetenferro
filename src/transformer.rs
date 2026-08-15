@@ -16,7 +16,6 @@
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::f32::consts::PI;
 use std::iter::zip;
 
 use serde_json::Value;
@@ -46,12 +45,12 @@ pub struct Model {
     pub n_layer: usize,
     pub vocab_size: usize,
     pub e: TypedTensor<f32>,
-    pub n_embd_as_tensor: TypedTensor<f32>,
-    pub head_size_as_tensor: TypedTensor<f32>,
+    pub c0: TypedTensor<f32>,
     pub c1: TypedTensor<f32>,
     pub c2: TypedTensor<f32>,
     pub c3: TypedTensor<f32>,
     pub c4: TypedTensor<f32>,
+    pub c5: TypedTensor<f32>,
     pub id_embd_vecs: Vec<TypedTensor<f32>>,
     pub pos_embd_vecs: Vec<TypedTensor<f32>>,
     pub layers: Vec<Layer>,
@@ -83,38 +82,27 @@ pub fn get_model(
         let value = config["layer_norm_epsilon"].as_f64().unwrap() as f32;
         TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
     };
-
-    let n_embd_as_tensor = TypedTensor::<f32>::from_vec_col_major(vec![], vec![n_embd as f32])?;
-
-    let head_size_as_tensor = TypedTensor::<f32>::from_vec_col_major(
-        vec![],
-        vec![1.0 / ((n_embd as f32) / (n_head as f32)).sqrt()],
-    )?;
-
-    let c1 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715])?;
-
-    let c2 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![(2.0 / PI).sqrt()])?;
-
-    let c3 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![1.0])?;
-
-    let c4 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.5])?;
-
-    let mut backend = CpuBackend::new();
+    let c0 = {
+        let value = n_embd as f32;
+        TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+    };
+    let c1 = {
+        let value = 1.0f32 / ((n_embd / n_head) as f32).sqrt();
+        TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+    };
+    let c2 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.044715f32])?;
+    let c3 = {
+        let value = (2.0f32 / std::f32::consts::PI).sqrt();
+        TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+    };
+    let c4 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![1.0f32])?;
+    let c5 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.5f32])?;
 
     // It feels more natural for me
-    // to perform "matrix * vector -> vector"
+    // to perform "matrix * column vector -> column vector"
     // than to perform "row vector * matrix -> row vector."
-    // Therefore, I apply `transpose` to the all matrices.
-
-    // This may also simplify the KV cache code
-    // since tenferro is col-major
-    // so adding a new column vector to the cache matrices
-    // is just appending the column vector to its internal Vector.
-
-    // wte and wpe are used just to obtain vectors at the input embedding phase
-    // (wte is also used for output embedding though, it is the transposed one)
-    // And my previous implementation in tenferro/Rust construct vector every time!
-    // So I'll obtain vectors beforehand here!
+    // Therefore, I apply `reshape` to 1D tensors and `transpose` to 2D tensors.
+    let mut backend = CpuBackend::new();
     let id_embd_vecs = {
         let mut embd_vecs = Vec::with_capacity(vocab_size);
         for row in 0..vocab_size {
@@ -127,7 +115,6 @@ pub fn get_model(
         }
         embd_vecs
     };
-
     let pos_embd_vecs = {
         let mut embd_vecs = Vec::with_capacity(n_ctx);
         for row in 0..n_ctx {
@@ -140,46 +127,33 @@ pub fn get_model(
         }
         embd_vecs
     };
-
     let layers = {
         let mut layers = Vec::with_capacity(n_layer);
         for i in 0..n_layer {
             let g1 = tensors[&format!("h.{i}.ln_1.weight")].reshape(&[n_embd, 1], &mut backend)?;
-
             let t1 = tensors[&format!("h.{i}.ln_1.bias")].reshape(&[n_embd, 1], &mut backend)?;
-
             let w11 =
                 tensors[&format!("h.{i}.attn.c_attn.weight")].transpose(&[1, 0], &mut backend)?;
             validate_shape(&w11, [n_embd * 3, n_embd])?;
-
             let b11 = tensors[&format!("h.{i}.attn.c_attn.bias")]
                 .reshape(&[n_embd * 3, 1], &mut backend)?;
-
             let w12 =
                 tensors[&format!("h.{i}.attn.c_proj.weight")].transpose(&[1, 0], &mut backend)?;
             validate_shape(&w12, [n_embd, n_embd])?;
-
             let b12 =
                 tensors[&format!("h.{i}.attn.c_proj.bias")].reshape(&[n_embd, 1], &mut backend)?;
-
             let g2 = tensors[&format!("h.{i}.ln_2.weight")].reshape(&[n_embd, 1], &mut backend)?;
-
             let t2 = tensors[&format!("h.{i}.ln_2.bias")].reshape(&[n_embd, 1], &mut backend)?;
-
             let w21 =
                 tensors[&format!("h.{i}.mlp.c_fc.weight")].transpose(&[1, 0], &mut backend)?;
             validate_shape(&w21, [n_embd * 4, n_embd])?;
-
             let b21 =
                 tensors[&format!("h.{i}.mlp.c_fc.bias")].reshape(&[n_embd * 4, 1], &mut backend)?;
-
             let w22 =
                 tensors[&format!("h.{i}.mlp.c_proj.weight")].transpose(&[1, 0], &mut backend)?;
             validate_shape(&w22, [n_embd, n_embd * 4])?;
-
             let b22 =
                 tensors[&format!("h.{i}.mlp.c_proj.bias")].reshape(&[n_embd, 1], &mut backend)?;
-
             let layer = Layer {
                 g1,
                 t1,
@@ -198,17 +172,9 @@ pub fn get_model(
         }
         layers
     };
-
-    // If I remember correctly
-    // tenferro raises RankMismatch
-    // when I try (TypedTensor with shape [a, b]) matmul (TypedTensor with shape [a]).
-    // If I need a matrix * vector operation
-    // I have to use (TypedTensor with shape [a, b]) matmul (TypedTensor with shape [a, 1]) instead.
-    // That means, I have to reshape the vectors to have the second index whose size is 1.
     let gf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
-
     let tf = tensors["ln_f.bias"].reshape(&[n_embd, 1], &mut backend)?;
-
+    // Transposing twice is doing nothing.
     let wte_transposed = tensors["wte.weight"].clone();
 
     let model = Model {
@@ -218,12 +184,12 @@ pub fn get_model(
         n_layer,
         vocab_size,
         e,
-        n_embd_as_tensor,
-        head_size_as_tensor,
+        c0,
         c1,
         c2,
         c3,
         c4,
+        c5,
         id_embd_vecs,
         pos_embd_vecs,
         layers,
@@ -234,10 +200,10 @@ pub fn get_model(
     Ok(model)
 }
 
-/// The transformer for the GPT-2 architecture.
+/// The transformer of the GPT-2 architecture.
 pub fn transform(
-    cached_k: &mut [Vec<f32>],
-    cached_v: &mut [Vec<f32>],
+    k_cache_colmaj: &mut [Vec<f32>],
+    v_cache_colmaj: &mut [Vec<f32>],
     model: &Model,
     id: usize,
     pos: usize,
@@ -247,16 +213,15 @@ pub fn transform(
 
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
 
-    for (i, layer) in zip(0..model.n_layer, &model.layers) {
+    for (layer, (k_colmaj, v_colmaj)) in zip(
+        &model.layers,
+        zip(k_cache_colmaj.iter_mut(), v_cache_colmaj.iter_mut()),
+    ) {
         // ==== Masked Multi-Head Attention ====
 
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
 
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
-
-        //   /\|
-        //   \/|
-        //     | ih
 
         let host_data = y.host_data()?;
         let mut j = 0;
@@ -265,30 +230,23 @@ pub fn transform(
             host_data[j..(j + model.n_embd)].to_vec(),
         )?;
         j += model.n_embd;
-        cached_k[i].extend_from_slice(&host_data[j..(j + model.n_embd)]);
+        // TODO: I'm not satisfied with `clone` here. Can I improve it?
+        k_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
         let k = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
-            cached_k[i].clone(),
+            k_colmaj.clone(),
         )?;
         j += model.n_embd;
-        cached_v[i].extend_from_slice(&host_data[j..(j + model.n_embd)]);
+        v_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
         let v = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
-            cached_v[i].clone(),
+            v_colmaj.clone(),
         )?;
-
-        // z_c = [k^T q]_{c}
-        //     = [k^T]_{ci} q_{i}
-        //     = k_{ic} q_{i}
-
-        // z_{hc} = [k^T q]_{hc}
-        //        = [k^T]_{chi} q_{ih}   <- (?)
-        //        = k_{ihc} q_{ih}       <- (?)
 
         let z = [&k, &q].einsum("ihc,ih->ch", backend)?;
 
         // _{ch}
-        let z = z.mul(&model.head_size_as_tensor, backend)?;
+        let z = z.mul(&model.c1, backend)?;
 
         // _{h}
         let max_z = {
@@ -334,13 +292,13 @@ pub fn transform(
         let y = y
             .mul(&y, backend)?
             .mul(&y, backend)?
-            .mul(&model.c1, backend)?
-            .add(&y, backend)?
             .mul(&model.c2, backend)?
+            .add(&y, backend)?
+            .mul(&model.c3, backend)?
             .tanh(backend)?
-            .add(&model.c3, backend)?
+            .add(&model.c4, backend)?
             .mul(&y, backend)?
-            .mul(&model.c4, backend)?;
+            .mul(&model.c5, backend)?;
 
         let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
 
@@ -362,9 +320,7 @@ fn layer_norm(
     backend: &mut tenferro_cpu::CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // mean(x) = sum(x) / n_embd
-    let mean_x = x
-        .reduce_sum(&[0], backend)?
-        .div(&model.n_embd_as_tensor, backend)?;
+    let mean_x = x.reduce_sum(&[0], backend)?.div(&model.c0, backend)?;
 
     // diff(x) = x .- mean(x)
     let diff_x = x.sub(&mean_x, backend)?;
@@ -373,7 +329,7 @@ fn layer_norm(
     let var_x = diff_x
         .mul(&diff_x, backend)?
         .reduce_sum(&[0], backend)?
-        .div(&model.n_embd_as_tensor, backend)?;
+        .div(&model.c0, backend)?;
 
     // √(var(x, corrected = false) + e)
     let denom = var_x.add(&model.e, backend)?.sqrt(backend)?;
