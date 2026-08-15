@@ -22,7 +22,6 @@ use std::time::Instant;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
-use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
 
 pub mod loader;
 pub mod tokenizer;
@@ -76,29 +75,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         ranks
     };
 
-    /*
-    let tensors = {
-        let path = &format!("{}/model.safetensors", &args[1]);
-        loader::load_safetensors(path)?
-    };
-
-    let config = {
-        let path = &format!("{}/config.json", &args[1]);
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-
-        let conf: HashMap<String, Value> = serde_json::from_reader(reader)?;
-        transformer::Config {
-            layer_norm_epsilon: conf["layer_norm_epsilon"].as_f64().unwrap() as f32,
-            n_ctx: conf["n_ctx"].as_u64().unwrap() as usize,
-            n_embd: conf["n_embd"].as_u64().unwrap() as usize,
-            n_head: conf["n_head"].as_u64().unwrap() as usize,
-            n_layer: conf["n_layer"].as_u64().unwrap() as usize,
-            vocab_size: conf["vocab_size"].as_u64().unwrap() as usize,
-        }
-    };
-    */
-
     let model = {
         let tensors = {
             let path = &format!("{}/model.safetensors", &args[1]);
@@ -117,8 +93,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Tokenization ====
 
-    let mut ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
-    if ids.len() == 0 {
+    let ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
+    if ids.is_empty() {
         println!("Your prompt should not be empty.");
         return Ok(());
     } else if ids.len() >= model.n_ctx {
@@ -129,15 +105,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ==== Inference ====
 
     let mut utf8_buffer = Vec::new();
-    /*
-    let mut cached_k = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
-    let mut cached_v = vec![vec![TypedTensor::<f32>::from_vec_col_major(vec![], vec![])?; model.n_embd / model.n_head]; model.n_layer];
-    */
-
-    /*
-    let mut cached_k = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
-    let mut cached_v = vec![vec![Vec::<f32>::new(); model.n_head]; model.n_layer];
-    */
 
     // k and v are 3D tensors
     // They have four indices
@@ -158,13 +125,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // they're in the order like [k_(i = 0, h = 0), k_(i = 1, h = 0), ..., k_(i = last, h = last)]
     // so I only have to do a reshape to get it
 
-    let mut cached_k= vec![Vec::<f32>::new(); model.n_layer];
-    let mut cached_v= vec![Vec::<f32>::new(); model.n_layer];
+    let mut cached_k = vec![Vec::<f32>::new(); model.n_layer];
+    let mut cached_v = vec![Vec::<f32>::new(); model.n_layer];
 
     let begin_time = Instant::now();
     let mut backend = CpuBackend::new();
-    for (pos, id) in ids[0..(ids.len() - 1)].into_iter().enumerate() {
-        let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+    for (pos, id) in ids[0..(ids.len() - 1)].iter().enumerate() {
+        let decoded = tokenizer::decode_unique_encoding(&id_to_token[id], &mut utf8_buffer);
         print!("\x1b[1;90m{decoded}\x1b[22;39m");
         std::io::stdout().flush()?;
         transformer::transform(&mut cached_k, &mut cached_v, &model, *id, pos, &mut backend)?;
@@ -174,7 +141,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     print!("\x1b[1;90m{decoded}\x1b[22;39m");
     std::io::stdout().flush()?;
     for pos in (ids.len() - 1)..model.n_ctx {
-        let logits = transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
+        let logits =
+            transformer::transform(&mut cached_k, &mut cached_v, &model, id, pos, &mut backend)?;
 
         // Greedy sampling: Choose the token with the highest probability.
         id = logits
@@ -192,58 +160,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let sec = begin_time.elapsed().as_secs_f64();
 
     println!();
-    println!("\x1b[90mTransformer processed {} tokens\x1b[39m", model.n_ctx);
-    println!("\x1b[90mTook {sec:.3} s | {:.3} tokens/s", (model.n_ctx as f64) / sec);
-    println!("\x1b[90m{} tokens prompted | {} tokens generated", ids.len(), model.n_ctx - ids.len() + 1);
-
-    /*
-    print!("\x1b[1;90m{}\x1b[22;39m", &args[2]);
-    std::io::stdout().flush()?;
-
-    let mut backend = CpuBackend::new();
-    let mut utf8_buffer = Vec::new();
-    loop {
-        match generate_next_id(&tensors, &config, &ids, &mut backend) {
-            Ok(next_id) => {
-                if ids.len() == config.n_ctx - 1 {
-                    ids.remove(0);
-                }
-                ids.push(next_id);
-
-                let decoded =
-                    tokenizer::decode_unique_encoding(&id_to_token[&next_id], &mut utf8_buffer);
-                print!("\x1b[1m{decoded}\x1b[22m");
-                std::io::stdout().flush()?;
-            }
-            Err(err) => {
-                println!();
-                return Err(err);
-            }
-        };
-    }
-    */
+    println!(
+        "\x1b[90mTransformer processed {} tokens\x1b[39m",
+        model.n_ctx
+    );
+    println!(
+        "\x1b[90mTook {sec:.3} s | {:.3} tokens/s",
+        (model.n_ctx as f64) / sec
+    );
+    println!(
+        "\x1b[90m{} tokens prompted | {} tokens generated",
+        ids.len(),
+        model.n_ctx - ids.len() + 1
+    );
 
     Ok(())
 }
-
-/*
-fn generate_next_id(
-    tensors: &HashMap<String, TypedTensor<f32>>,
-    config: &transformer::Config,
-    ids: &Vec<usize>,
-    backend: &mut CpuBackend,
-) -> Result<usize, Box<dyn Error>> {
-    let output = transformer::transform(tensors, config, ids, backend)?;
-
-    // Greedy sampling: Choose the token with the highest probability.
-    let next_id = output
-        .host_data()?
-        .iter()
-        .enumerate()
-        .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
-        .map(|(id, _)| id)
-        .unwrap();
-
-    Ok(next_id)
-}
-*/
