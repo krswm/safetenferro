@@ -252,20 +252,23 @@ pub fn transform(
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // ==== Embedding ====
 
+    println!(">>>> T <<<<");
     let mut x = model.id_embd_vecs[id].add(&model.pos_embd_vecs[pos], backend)?;
 
     for (i, layer) in zip(0..model.n_layer, &model.layers) {
         // ==== Masked Multi-Head Attention ====
 
+        println!(">>>> A <<<<");
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
 
-        // Rust's variable shadowing is nice!
+        println!(">>>> B <<<<");
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
 
         //   /\|
         //   \/|
         //     | ih
 
+        println!(">>>> C <<<<");
         let host_data = y.host_data()?;
         let mut j = 0;
         let q = TypedTensor::<f32>::from_vec_col_major(vec![model.n_embd / model.n_head, model.n_head], host_data[j..(j + model.n_embd)].to_vec())?;
@@ -348,20 +351,34 @@ pub fn transform(
         //        = [k^T]_{chi} q_{ih}   <- (?)
         //        = k_{ihc} q_{ih}       <- (?)
 
+        println!(">>>> D <<<<");
         let z = [&k, &q].einsum("ihc,ih->hc", backend)?;
+        println!("{:?}", z.shape());
 
+        println!(">>>> E <<<<");
         let z = z.mul(&model.head_size_as_tensor, backend)?;
+        println!("{:?}", z.shape());
 
         // Numerically unstable :)
+        println!(">>>> F <<<<");
         let z = z.exp(backend)?;
+        println!("{:?}", z.shape());
 
-        let x12 = z.reduce_sum(&[1], backend)?.reshape(&[model.n_head, pos + 1], backend)?;
+        println!(">>>> G <<<<");
+        let x12 = z.reduce_sum(&[1], backend)?.reshape(&[model.n_head, 1], backend)?;
+        println!("{:?}", x12.shape());
 
-        let x13 = z.div(&x12, backend);
+        println!(">>>> H <<<<");
+        let x13 = z.div(&x12, backend)?;
+        println!("{:?}", x13.shape());
 
-        let z = [&v, &z].einsum("ihc,hc->ih", backend)?;
+        println!(">>>> I <<<<");
+        let z = [&v, &x13].einsum("ihc,hc->ih", backend)?;
+        println!("{:?}", z.shape());
 
-        let z = z.reshape(&[model.n_embd, 1], backend)?;
+        println!(">>>> J <<<<");
+        let y = z.reshape(&[model.n_embd, 1], backend)?;
+        println!("{:?}", y.shape());
 
         /*
         let y = {
@@ -395,17 +412,22 @@ pub fn transform(
         */
 
 
+        println!(">>>> K <<<<");
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
 
+        println!(">>>> L <<<<");
         x = x.add(&y, backend)?;
 
 
         // ==== Feed Forward ====
 
+        println!(">>>> M <<<<");
         let y = layer_norm(&x, &layer.g2, &layer.t2, model, backend)?;
 
+        println!(">>>> N <<<<");
         let y = layer.w21.matmul(&y, backend)?.add(&layer.b21, backend)?;
 
+        println!(">>>> O <<<<");
         let y = y
             .mul(&y, backend)?
             .mul(&y, backend)?
@@ -417,15 +439,19 @@ pub fn transform(
             .mul(&y, backend)?
             .mul(&model.c4, backend)?;
 
+        println!(">>>> P <<<<");
         let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
 
+        println!(">>>> Q <<<<");
         x = x.add(&y, backend)?;
 
     }
 
 
+    println!(">>>> R <<<<");
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
+    println!(">>>> S <<<<");
     x = model.wte_transposed.matmul(&x, backend)?;
 
 
