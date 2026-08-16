@@ -14,6 +14,11 @@ Now it uses KV-cache.
 The attention code is quite long now.
 I think it's time to use EinSum!
 
+## 2026-08-16
+
+Tenferro becomes v0.3!
+I'm going to bump it.
+
 # GPT-2 Inference with tenferro
 
 I built a GPT-2 inference engine from scratch in Rust.

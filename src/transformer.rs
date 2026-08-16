@@ -175,7 +175,7 @@ pub fn get_model(
     let gf = tensors["ln_f.weight"].reshape(&[n_embd, 1], &mut backend)?;
     let tf = tensors["ln_f.bias"].reshape(&[n_embd, 1], &mut backend)?;
     // Transposing twice is doing nothing.
-    let wte_transposed = tensors["wte.weight"].clone();
+    let wte_transposed = tensors["wte.weight"].duplicate()?;
 
     let model = Model {
         n_ctx,

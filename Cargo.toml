@@ -5,6 +5,6 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tenferro-cpu = "0.2"
-tenferro-einsum = "0.2"
-tenferro-runtime = "0.2"
+tenferro-cpu = "0.3"
+tenferro-einsum = "0.3"
+tenferro-runtime = "0.3"
