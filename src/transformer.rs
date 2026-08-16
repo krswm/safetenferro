@@ -351,37 +351,37 @@ pub fn transform(
         // ┃ k[i=last h=0    p=0    ] │ ⋯ │ k[i=last h=0    p=pos  ] ┃
         // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
+        // z = transpose.(k) .* q ./ √Float32(model.n_embd ÷ model.n_head)
         let z = [&k, &q]
-            .einsum("ihc,ih->ch", backend)?
+            .einsum("ihp,ih->ph", backend)?
             .mul(&model.c1, backend)?;
 
-        // _{h}
-        let max_z = {
-            let mut colmaj = Vec::with_capacity(model.n_head);
-            for h in 0..model.n_head {
-                let max: f32 = *z.host_data()?[(h * (pos + 1))..((h + 1) * (pos + 1))]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b))
-                    .unwrap();
-                colmaj.push(max);
-            }
+        // maximum(z)
+        let maximum = {
+            let colmaj: Vec<f32> = z
+                .host_data()?
+                .chunks(pos + 1)
+                .map(|chunk| *chunk.iter().max_by(|a, b| a.total_cmp(b)).unwrap())
+                .collect();
             TypedTensor::<f32>::from_vec_col_major(vec![1, model.n_head], colmaj)?
         };
 
-        // _{ch}
-        let z = z.sub(&max_z, backend)?.exp(backend)?;
+        // z .- maximum(z)
+        let numerator = z.sub(&maximum, backend)?.exp(backend)?;
 
-        // _{h}
-        let x12 = z
+        // sum(z .- maximum(z))
+        let denominator = numerator
             .reduce_sum(&[0], backend)?
             .reshape(&[1, model.n_head], backend)?;
 
-        // _{ch}
-        let x13 = z.div(&x12, backend)?;
+        // softmax = (z .- maximum(z)) ./ sum(z .- maximum(z))
+        let softmax = numerator.div(&denominator, backend)?;
 
-        let y = [&v, &x13]
-            .einsum("ihc,ch->ih", backend)?
-            .reshape(&[model.n_embd, 1], backend)?;
+        // attention = v .* softmax
+        let attention = [&v, &softmax].einsum("ihc,ch->ih", backend)?;
+
+        // y = vcat(attention...)
+        let y = attention.reshape(&[model.n_embd, 1], backend)?;
 
         // y = layer.w12 * y + layer.b12
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
