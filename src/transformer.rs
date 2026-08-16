@@ -256,19 +256,19 @@ pub fn transform(
         // y = layer.w11 * y + layer.b11
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
 
+        // y is a 1D TypedTensor:
+        //
         // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         // ┃ q[i=0               h=0             ] ┃
         // ┠───────────────────────────────────────┨
         // ┃ q[i=1               h=0             ] ┃
         // ┠───────────────────────────────────────┨
         // ┃                   ⋮                   ┃
-        // ┃                   ⋮                   ┃
         // ┠───────────────────────────────────────┨
-        // ┃ q[i=n_emdd/n_head-1 h=0             ] ┃
+        // ┃ q[i=n_embd/n_head-1 h=0             ] ┃
         // ┠───────────────────────────────────────┨
         // ┃ q[i=0               h=1             ] ┃
         // ┠───────────────────────────────────────┨
-        // ┃                   ⋮                   ┃
         // ┃                   ⋮                   ┃
         // ┠───────────────────────────────────────┨
         // ┃ q[i=n_embd/n_head-1 h=n_head-1      ] ┃
@@ -278,7 +278,6 @@ pub fn transform(
         // ┃ k[i=1               h=0        p=pos] ┃
         // ┠───────────────────────────────────────┨
         // ┃                   ⋮                   ┃
-        // ┃                   ⋮                   ┃
         // ┠───────────────────────────────────────┨
         // ┃ k[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
         // ┠───────────────────────────────────────┨
@@ -287,52 +286,70 @@ pub fn transform(
         // ┃ v[i=1               h=0        p=pos] ┃
         // ┠───────────────────────────────────────┨
         // ┃                   ⋮                   ┃
-        // ┃                   ⋮                   ┃
         // ┠───────────────────────────────────────┨
         // ┃ v[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
         // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-        //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-        //    ┃ q[i=0               h=1             ] ┃
-        //  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-        //  ┃ q[i=0               h=1             ] ┃
-        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┨
-        // ┃ q[i=0               h=0             ] ┃┃
-        // ┠───────────────────────────────────────┨┨
-        // ┃ q[i=1               h=0             ] ┃┃
-        // ┠───────────────────────────────────────┨┃
-        // ┃                   ⋮                   ┃┨
-        // ┃                   ⋮                   ┃┃
-        // ┠───────────────────────────────────────┨┛
-        // ┃ q[i=n_emdd/n_head-1 h=0             ] ┃
-        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+        let mut chunks = y.host_data()?.chunks(model.n_embd);
 
-        //    ⎡ q[i=0               h=n_head-1] ⎤
-        //   ⋰                                  ⎥
-        //  ⎡ q[i=0               h=1       ] ⎤ ⎥
-        // ⎡ q[i=0               h=0       ] ⎤⎥ ⎦
-        // ⎢ q[i=1               h=0       ] ⎥⎥
-        // ⎢ ⋮                               ⎥⎦
-        // ⎣ q[i=n_embd/n_head-1 h=0       ] ⎦
-
-        let host_data = y.host_data()?;
-        let mut j = 0;
         let q = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head],
-            host_data[j..(j + model.n_embd)].to_vec(),
+            chunks.next().unwrap().to_vec(),
         )?;
-        j += model.n_embd;
-        k_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
+
+        // q is a 2D TypedTensor:
+        //
+        //    ┏━━━━━━━━━━━━━━━━━━┓
+        //    ┃ q[i=0    h=last] ┃
+        //            ⋰         ─┨
+        // ┏━━━━━━━━━━━━━━━━━━┓  ┃
+        // ┃ q[i=0    h=0   ] ┃ ─┨
+        // ┠──────────────────┨  ┃
+        // ┃        ⋮         ┃ ━┛
+        // ┠──────────────────┨
+        // ┃ q[i=last h=0   ] ┃
+        // ┗━━━━━━━━━━━━━━━━━━┛
+
+        k_colmaj.extend_from_slice(chunks.next().unwrap());
+        v_colmaj.extend_from_slice(chunks.next().unwrap());
+
+        // k_colmaj is a Vec (similar for v_colmaj):
+        //
+        // k[i=0    h=0    p=0    ]
+        // k[i=1    h=0    p=0    ]
+        //            ⋮
+        // k[i=last h=0    p=0    ]
+        // k[i=0    h=1    p=0    ]
+        //            ⋮
+        // k[i=last h=last p=0    ]
+        // k[i=0    h=0    p=1    ]
+        //            ⋮
+        // k[i=last h=last p=pos-1]
+        // k[i=0    h=0    p=pos  ] ⎫
+        //            ⋮             ⎬ Newly extended values
+        // k[i=last h=last p=pos  ] ⎭
+
         let k = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
             k_colmaj.to_vec(),
         )?;
-        j += model.n_embd;
-        v_colmaj.extend_from_slice(&host_data[j..(j + model.n_embd)]);
         let v = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
             v_colmaj.to_vec(),
         )?;
+
+        // k is a 3D TypedTensor (similar for v):
+        //
+        //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        //    ┃ k[i=0    h=last p=0    ] │ ⋯ │ k[i=0    h=last p=pos  ] ┃
+        //                                ⋰                            ─┨
+        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┃
+        // ┃ k[i=0    h=0    p=0    ] │ ⋯ │ k[i=0    h=0    p=pos  ] ┃ ─┨
+        // ┠──────────────────────────┼───┼──────────────────────────┨  ┃
+        // ┃            ⋮             │   │            ⋮             ┃ ━┛
+        // ┠──────────────────────────┼───┼──────────────────────────┨
+        // ┃ k[i=last h=0    p=0    ] │ ⋯ │ k[i=last h=0    p=pos  ] ┃
+        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
         let z = [&k, &q]
             .einsum("ihc,ih->ch", backend)?
