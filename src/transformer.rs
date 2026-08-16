@@ -83,7 +83,7 @@ pub fn get_model(
         TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
     };
     let c0 = {
-        let value = n_embd as f32;
+        let value = 1.0f32 / n_embd as f32;
         TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
     };
     let c1 = {
@@ -205,10 +205,10 @@ fn layer_norm(
     g: &TypedTensor<f32>,
     t: &TypedTensor<f32>,
     model: &Model,
-    backend: &mut tenferro_cpu::CpuBackend,
+    backend: &mut CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
     // mean(x) = sum(x) / n_embd
-    let mean = x.reduce_sum(&[0], backend)?.div(&model.c0, backend)?;
+    let mean = x.reduce_sum(&[0], backend)?.mul(&model.c0, backend)?;
 
     // x .- mean(x)
     let numerator = x.sub(&mean, backend)?;
@@ -217,7 +217,7 @@ fn layer_norm(
     let var = numerator
         .mul(&numerator, backend)?
         .reduce_sum(&[0], backend)?
-        .div(&model.c0, backend)?;
+        .mul(&model.c0, backend)?;
 
     // √(var(x, corrected = false) + e)
     let denominator = var.add(&model.e, backend)?.sqrt(backend)?;
@@ -233,8 +233,8 @@ fn layer_norm(
 
 /// The transformer of the GPT-2 architecture.
 pub fn transform(
-    k_cache_colmaj: &mut [Vec<f32>],
-    v_cache_colmaj: &mut [Vec<f32>],
+    k_colmaj_caches: &mut [Vec<f32>],
+    v_colmaj_caches: &mut [Vec<f32>],
     model: &Model,
     id: usize,
     pos: usize,
@@ -247,7 +247,7 @@ pub fn transform(
 
     for (layer, (k_colmaj, v_colmaj)) in zip(
         &model.layers,
-        zip(k_cache_colmaj.iter_mut(), v_cache_colmaj.iter_mut()),
+        zip(k_colmaj_caches.iter_mut(), v_colmaj_caches.iter_mut()),
     ) {
         // ==== Masked Multi-Head Attention ====
 
@@ -255,6 +255,65 @@ pub fn transform(
 
         // y = layer.w11 * y + layer.b11
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
+
+        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        // ┃ q[i=0               h=0             ] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ q[i=1               h=0             ] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃                   ⋮                   ┃
+        // ┃                   ⋮                   ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ q[i=n_emdd/n_head-1 h=0             ] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ q[i=0               h=1             ] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃                   ⋮                   ┃
+        // ┃                   ⋮                   ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ q[i=n_embd/n_head-1 h=n_head-1      ] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ k[i=0               h=0        p=pos] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ k[i=1               h=0        p=pos] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃                   ⋮                   ┃
+        // ┃                   ⋮                   ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ k[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ v[i=0               h=0        p=pos] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ v[i=1               h=0        p=pos] ┃
+        // ┠───────────────────────────────────────┨
+        // ┃                   ⋮                   ┃
+        // ┃                   ⋮                   ┃
+        // ┠───────────────────────────────────────┨
+        // ┃ v[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
+        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+        //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        //    ┃ q[i=0               h=1             ] ┃
+        //  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        //  ┃ q[i=0               h=1             ] ┃
+        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┨
+        // ┃ q[i=0               h=0             ] ┃┃
+        // ┠───────────────────────────────────────┨┨
+        // ┃ q[i=1               h=0             ] ┃┃
+        // ┠───────────────────────────────────────┨┃
+        // ┃                   ⋮                   ┃┨
+        // ┃                   ⋮                   ┃┃
+        // ┠───────────────────────────────────────┨┛
+        // ┃ q[i=n_emdd/n_head-1 h=0             ] ┃
+        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+        //    ⎡ q[i=0               h=n_head-1] ⎤
+        //   ⋰                                  ⎥
+        //  ⎡ q[i=0               h=1       ] ⎤ ⎥
+        // ⎡ q[i=0               h=0       ] ⎤⎥ ⎦
+        // ⎢ q[i=1               h=0       ] ⎥⎥
+        // ⎢ ⋮                               ⎥⎦
+        // ⎣ q[i=n_embd/n_head-1 h=0       ] ⎦
 
         let host_data = y.host_data()?;
         let mut j = 0;

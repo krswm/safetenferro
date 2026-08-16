@@ -122,8 +122,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     //   (i=0, h=0), (i=1, h=0), ..., (i=last, h=0), (i=0, h=1), (i=1, h=1), ...
     // Since i is the first and h is the second indices, this program can extend the new head-vector
     // to the column-major representation of the cached matrix without transposing.
-    let mut k_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
-    let mut v_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
+    let mut k_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
+    let mut v_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
 
     let mut backend = CpuBackend::new();
     let mut id = 0usize;
@@ -143,8 +143,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let logits = transformer::transform(
-            &mut k_cache_colmaj,
-            &mut v_cache_colmaj,
+            &mut k_colmaj_caches,
+            &mut v_colmaj_caches,
             &model,
             id,
             pos,
