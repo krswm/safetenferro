@@ -255,9 +255,7 @@ pub fn transform(
 
         // y = layer.w11 * y + layer.b11
         let y = layer.w11.matmul(&y, backend)?.add(&layer.b11, backend)?;
-
         // y is a 1D TypedTensor:
-        //
         // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         // ┃ q[i=0               h=0             ] ┃
         // ┠───────────────────────────────────────┨
@@ -289,16 +287,13 @@ pub fn transform(
         // ┠───────────────────────────────────────┨
         // ┃ v[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
         // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
         let mut chunks = y.host_data()?.chunks(model.n_embd);
 
         let q = TypedTensor::<f32>::from_vec_col_major(
             vec![model.n_embd / model.n_head, model.n_head],
             chunks.next().unwrap().to_vec(),
         )?;
-
         // q is a 2D TypedTensor:
-        //
         //    ┏━━━━━━━━━━━━━━━━━━┓
         //    ┃ q[i=0    h=last] ┃
         //            ⋰         ─┨
@@ -312,8 +307,7 @@ pub fn transform(
 
         k_colmaj.extend_from_slice(chunks.next().unwrap());
         v_colmaj.extend_from_slice(chunks.next().unwrap());
-
-        // k_colmaj is a Vec (similar for v_colmaj):
+        // k_colmaj is a Vec (same for v_colmaj):
         //
         // k[i=0    h=0    p=0    ]
         // k[i=1    h=0    p=0    ]
@@ -337,9 +331,7 @@ pub fn transform(
             vec![model.n_embd / model.n_head, model.n_head, pos + 1],
             v_colmaj.to_vec(),
         )?;
-
-        // k is a 3D TypedTensor (similar for v):
-        //
+        // k is a 3D TypedTensor (same for v):
         //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         //    ┃ k[i=0    h=last p=0    ] │ ⋯ │ k[i=0    h=last p=pos  ] ┃
         //                                ⋰                            ─┨
@@ -355,6 +347,17 @@ pub fn transform(
         let z = [&k, &q]
             .einsum("ihp,ih->ph", backend)?
             .mul(&model.c1, backend)?;
+        // 2D TypedTensor:
+        //    ┏━━━━━━━━━━━━━━┓
+        //    ┃ p=0   h=last ┃
+        //          ⋰       ─┨
+        // ┏━━━━━━━━━━━━━━┓  ┃
+        // ┃ p=0   h=0    ┃ ─┨
+        // ┠──────────────┨  ┃
+        // ┃      ⋮       ┃ ━┛
+        // ┠──────────────┨
+        // ┃ p=pos h=0    ┃
+        // ┗━━━━━━━━━━━━━━┛
 
         // maximum(z)
         let maximum = {
@@ -365,23 +368,86 @@ pub fn transform(
                 .collect();
             TypedTensor::<f32>::from_vec_col_major(vec![1, model.n_head], colmaj)?
         };
+        // 1D TypedTensor:
+        //    ┏━━━━━━━━┓
+        //    ┃ h=last ┃
+        //       ⋰    ━┛
+        // ┏━━━━━━━━┓
+        // ┃ h=0    ┃
+        // ┗━━━━━━━━┛
 
         // z .- maximum(z)
         let numerator = z.sub(&maximum, backend)?.exp(backend)?;
+        // 2D TypedTensor:
+        //    ┏━━━━━━━━━━━━━━┓
+        //    ┃ p=0   h=last ┃
+        //          ⋰       ─┨
+        // ┏━━━━━━━━━━━━━━┓  ┃
+        // ┃ p=0   h=0    ┃ ─┨
+        // ┠──────────────┨  ┃
+        // ┃      ⋮       ┃ ━┛
+        // ┠──────────────┨
+        // ┃ p=pos h=0    ┃
+        // ┗━━━━━━━━━━━━━━┛
 
         // sum(z .- maximum(z))
         let denominator = numerator
             .reduce_sum(&[0], backend)?
             .reshape(&[1, model.n_head], backend)?;
+        // 1D TypedTensor:
+        //    ┏━━━━━━━━┓
+        //    ┃ h=last ┃
+        //       ⋰    ━┛
+        // ┏━━━━━━━━┓
+        // ┃ h=0    ┃
+        // ┗━━━━━━━━┛
 
         // softmax = (z .- maximum(z)) ./ sum(z .- maximum(z))
         let softmax = numerator.div(&denominator, backend)?;
+        // 2D TypedTensor:
+        //    ┏━━━━━━━━━━━━━━┓
+        //    ┃ p=0   h=last ┃
+        //          ⋰       ─┨
+        // ┏━━━━━━━━━━━━━━┓  ┃
+        // ┃ p=0   h=0    ┃ ─┨
+        // ┠──────────────┨  ┃
+        // ┃      ⋮       ┃ ━┛
+        // ┠──────────────┨
+        // ┃ p=pos h=0    ┃
+        // ┗━━━━━━━━━━━━━━┛
 
         // attention = v .* softmax
-        let attention = [&v, &softmax].einsum("ihc,ch->ih", backend)?;
+        let attention = [&v, &softmax].einsum("ihp,ph->ih", backend)?;
+        // attention is a 2D TypedTensor:
+        //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        //    ┃ attention[i=0    h=last] ┃
+        //                ⋰             ─┨
+        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┃
+        // ┃ attention[i=0    h=0   ] ┃ ─┨
+        // ┠──────────────────────────┨  ┃
+        // ┃            ⋮             ┃ ━┛
+        // ┠──────────────────────────┨
+        // ┃ attention[i=last h=0   ] ┃
+        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
         // y = vcat(attention...)
         let y = attention.reshape(&[model.n_embd, 1], backend)?;
+        // y is a 1D TypedTensor:
+        // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        // ┃ attention[i=0    h=0   ] ┃
+        // ┠──────────────────────────┨
+        // ┃ attention[i=1    h=0   ] ┃
+        // ┠──────────────────────────┨
+        // ┃            ⋮             ┃
+        // ┠──────────────────────────┨
+        // ┃ attention[i=last h=0   ] ┃
+        // ┠──────────────────────────┨
+        // ┃ attention[i=0    h=1   ] ┃
+        // ┠──────────────────────────┨
+        // ┃            ⋮             ┃
+        // ┠──────────────────────────┨
+        // ┃ attention[i=last h=last] ┃
+        // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
         // y = layer.w12 * y + layer.b12
         let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
