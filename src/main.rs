@@ -125,28 +125,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut k_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
     let mut v_cache_colmaj = vec![Vec::<f32>::new(); model.n_layer];
 
+    let mut backend = CpuBackend::new();
+    let mut id = 0usize;
     let mut utf8_buffer: Vec<u8> = Vec::new();
+    let mut num_prompted_tokens = 0usize;
+    let mut num_processed_tokens = 0usize;
+    let mut num_generated_tokens = 0usize;
 
     let performance_timer = Instant::now();
-    let mut backend = CpuBackend::new();
-    for (pos, id) in ids[..(ids.len() - 1)].iter().enumerate() {
-        let decoded = tokenizer::decode_unique_encoding(&id_to_token[id], &mut utf8_buffer);
-        print!("\x1b[1;90m{decoded}\x1b[22;39m");
-        std::io::stdout().flush()?;
-        transformer::transform(
-            &mut k_cache_colmaj,
-            &mut v_cache_colmaj,
-            &model,
-            *id,
-            pos,
-            &mut backend,
-        )?;
-    }
-    let mut id = ids[ids.len() - 1];
-    let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-    print!("\x1b[1;90m{decoded}\x1b[22;39m");
-    std::io::stdout().flush()?;
-    for pos in (ids.len() - 1)..model.n_ctx {
+    for pos in 0..model.n_ctx {
+        if pos < ids.len() {
+            id = ids[pos];
+            let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+            print!("\x1b[1;90m{decoded}\x1b[22;39m");
+            std::io::stdout().flush()?;
+            num_prompted_tokens += 1;
+        }
+
         let logits = transformer::transform(
             &mut k_cache_colmaj,
             &mut v_cache_colmaj,
@@ -155,35 +150,52 @@ fn main() -> Result<(), Box<dyn Error>> {
             pos,
             &mut backend,
         )?;
+        num_processed_tokens += 1;
 
-        // Greedy sampling: Choose the token with the highest probability.
-        id = logits
-            .host_data()?
-            .iter()
-            .enumerate()
-            .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
-            .map(|(id, _)| id)
-            .unwrap();
-
-        let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-        print!("\x1b[1m{decoded}\x1b[22m");
-        std::io::stdout().flush()?;
+        if pos >= ids.len() - 1 {
+            // Greedy sampling: Choose the token with the highest probability.
+            id = logits
+                .host_data()?
+                .iter()
+                .enumerate()
+                .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
+                .map(|(id, _)| id)
+                .unwrap();
+            let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
+            print!("\x1b[1m{decoded}\x1b[22m");
+            std::io::stdout().flush()?;
+            num_generated_tokens += 1;
+        }
     }
+    println!();
     let performance_time = performance_timer.elapsed().as_secs_f64();
 
-    println!();
+    println!("\x1b[90mTook {performance_time:.3} s\x1b[39m");
     println!(
-        "\x1b[90mTransformer processed {} tokens\x1b[39m",
-        model.n_ctx
+        "\x1b[90m{num_prompted_tokens} {} prompted\x1b[39m",
+        if num_prompted_tokens == 1 {
+            "token"
+        } else {
+            "tokens"
+        }
     );
     println!(
-        "\x1b[90mTook {performance_time:.3} s | {:.3} tokens/s",
-        (model.n_ctx as f64) / performance_time
+        "\x1b[90m{num_processed_tokens} {} processed by the transformer \
+        ({:.3} tok/s)\x1b[39m",
+        if num_processed_tokens == 1 {
+            "token"
+        } else {
+            "tokens"
+        },
+        (num_processed_tokens as f64) / performance_time
     );
     println!(
-        "\x1b[90m{} tokens prompted | {} tokens generated",
-        ids.len(),
-        model.n_ctx - ids.len() + 1 // There is an extra token.
+        "\x1b[90m{num_generated_tokens} {} generated\x1b[39m",
+        if num_generated_tokens == 1 {
+            "token"
+        } else {
+            "tokens"
+        }
     );
 
     Ok(())
