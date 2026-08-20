@@ -98,10 +98,24 @@ pub fn get_model(
     let c4 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![1.0f32])?;
     let c5 = TypedTensor::<f32>::from_vec_col_major(vec![], vec![0.5f32])?;
 
-    // It feels more natural for me
-    // to perform "matrix * column vector -> column vector"
-    // than to perform "row vector * matrix -> row vector."
-    // Therefore, I apply `reshape` to 1D tensors and `transpose` to 2D tensors.
+    // Regarding a dot product between a matrix and a vector,
+    // it feels more natural for me to perform:
+    //               ┏━━━┓
+    // ┏━━━┯━━━┯━━━┓ ┃ a ┃   ┏━━━━━━━━━━┓
+    // ┃ d │ f │ h ┃ ┠───┨   ┃ ad+bf+ch ┃
+    // ┠───┼───┼───┨ ┃ b ┃ → ┠──────────┨
+    // ┃ e │ g │ i ┃ ┠───┨   ┃ ae+bg+ci ┃
+    // ┗━━━┷━━━┷━━━┛ ┃ c ┃   ┗━━━━━━━━━━┛
+    //               ┗━━━┛
+    // than to perform:
+    //               ┏━━━┯━━━┓
+    //               ┃ d │ e ┃
+    // ┏━━━┯━━━┯━━━┓ ┠───┼───┨   ┏━━━━━━━━━━┯━━━━━━━━━━┓
+    // ┃ a │ b │ c ┃ ┃ f │ g ┃ → ┃ ab+bf+ch │ ae+bg+ci ┃
+    // ┗━━━┷━━━┷━━━┛ ┠───┼───┨   ┗━━━━━━━━━━┷━━━━━━━━━━┛
+    //               ┃ h │ i ┃
+    //               ┗━━━┷━━━┛
+    // Therefore, I apply `reshape` to 1D tensors and `transpose` to 2D tensors here.
     let mut backend = CpuBackend::new();
     let id_embd_vecs = {
         let mut embd_vecs = Vec::with_capacity(vocab_size);
@@ -213,16 +227,18 @@ fn layer_norm(
     // x .- mean(x)
     let numerator = x.sub(&mean, backend)?;
 
-    // var(x, corrected = false) = sum((x .- mean(x) .^ 2) / n_embd
+    // The paper that introduced layer norm uses uncorrected variance.
+    // https://arxiv.org/abs/1607.06450
+    // var(x, corrected = false) = sum((x .- mean(x)) .^ 2) / n_embd
     let var = numerator
         .mul(&numerator, backend)?
         .reduce_sum(&[0], backend)?
         .mul(&model.c0, backend)?;
 
-    // √(var(x, corrected = false) + e)
+    // √(var(x, corrected = false) + model.e)
     let denominator = var.add(&model.e, backend)?.sqrt(backend)?;
 
-    // g .* (x .- mean(x)) ./ √(var(x, corrected = false) + e) + t
+    // g .* (x .- mean(x)) ./ √(var(x, corrected = false) + model.e) + t
     let x = g
         .mul(&numerator, backend)?
         .div(&denominator, backend)?
@@ -400,7 +416,7 @@ fn multi_head_attention(
     // ┗━━━━━━━━┛
 
     // Numerically stable softmax
-    // softmax(y) = (y .- maximum(y)) ./ sum(y .- maximum(y))
+    // softmax.(y) = (y .- maximum(y)) ./ sum(y .- maximum(y))
     let softmax = numerator.div(&denominator, backend)?;
     // 2D TypedTensor:
     //    ┏━━━━━━━━━━━━━━┓
@@ -415,7 +431,7 @@ fn multi_head_attention(
     // ┗━━━━━━━━━━━━━━┛
 
     // Scaled dot-product attention
-    // a = v .* softmax(y)
+    // a = v .* softmax.(y)
     let a = [&v, &softmax].einsum("ihp,ph->ih", backend)?;
     // `a` is a 2D TypedTensor:
     //    ┏━━━━━━━━━━━━━━━━━━┓
@@ -502,7 +518,7 @@ pub fn transformer(
         // y = layer_norm(x, layer.g1, layer.t1, model)
         let y = layer_norm(&x, &layer.g1, &layer.t1, model, backend)?;
 
-        // y = multi_head_attention(y, layer, k, v, pos, model)
+        // y = multi_head_attention!(y, layer, k, v, pos, model)
         let y = multi_head_attention(&y, layer, k_colmaj, v_colmaj, pos, model, backend)?;
 
         // x += y
@@ -521,7 +537,7 @@ pub fn transformer(
     // x = layer_norm(x, model.gf, model.tf, model)
     x = layer_norm(&x, &model.gf, &model.tf, model, backend)?;
 
-    // transpose(model.wte) * x
+    // x = transpose(model.wte) * x
     x = model.wte_transposed.matmul(&x, backend)?;
 
     Ok(x)
