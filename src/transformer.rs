@@ -232,7 +232,7 @@ fn layer_norm(
 }
 
 fn multi_head_attention(
-    y: &TypedTensor<f32>,
+    x: &TypedTensor<f32>,
     layer: &Layer,
     k_colmaj: &mut Vec<f32>,
     v_colmaj: &mut Vec<f32>,
@@ -240,9 +240,9 @@ fn multi_head_attention(
     model: &Model,
     backend: &mut CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
-    // y = layer.w11 * y + layer.b11
-    let y = layer.w11.matmul(y, backend)?.add(&layer.b11, backend)?;
-    // y is a 1D TypedTensor:
+    // x = layer.w11 * x + layer.b11
+    let x = layer.w11.matmul(x, backend)?.add(&layer.b11, backend)?;
+    // `x` is a 1D TypedTensor:
     // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
     // ┃ q[i=0               h=0             ] ┃
     // ┠───────────────────────────────────────┨
@@ -260,27 +260,24 @@ fn multi_head_attention(
     // ┠───────────────────────────────────────┨
     // ┃ k[i=0               h=0        p=pos] ┃
     // ┠───────────────────────────────────────┨
-    // ┃ k[i=1               h=0        p=pos] ┃
-    // ┠───────────────────────────────────────┨
     // ┃                   ⋮                   ┃
     // ┠───────────────────────────────────────┨
     // ┃ k[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
     // ┠───────────────────────────────────────┨
     // ┃ v[i=0               h=0        p=pos] ┃
     // ┠───────────────────────────────────────┨
-    // ┃ v[i=1               h=0        p=pos] ┃
-    // ┠───────────────────────────────────────┨
     // ┃                   ⋮                   ┃
     // ┠───────────────────────────────────────┨
     // ┃ v[i=n_embd/n_head-1 h=n_head-1 p=pos] ┃
     // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-    let mut chunks = y.host_data()?.chunks(model.n_embd);
+
+    let mut chunks = x.host_data()?.chunks(model.n_embd);
 
     let q = TypedTensor::<f32>::from_vec_col_major(
         vec![model.n_embd / model.n_head, model.n_head],
         chunks.next().unwrap().to_vec(),
     )?;
-    // q is a 2D TypedTensor:
+    // `q` is a 2D TypedTensor:
     //    ┏━━━━━━━━━━━━━━━━━━┓
     //    ┃ q[i=0    h=last] ┃
     //            ⋰         ─┨
@@ -294,21 +291,34 @@ fn multi_head_attention(
 
     k_colmaj.extend_from_slice(chunks.next().unwrap());
     v_colmaj.extend_from_slice(chunks.next().unwrap());
-    // k_colmaj is a Vec (same for v_colmaj):
-    //
-    // k[i=0    h=0    p=0    ]
-    // k[i=1    h=0    p=0    ]
-    //            ⋮
-    // k[i=last h=0    p=0    ]
-    // k[i=0    h=1    p=0    ]
-    //            ⋮
-    // k[i=last h=last p=0    ]
-    // k[i=0    h=0    p=1    ]
-    //            ⋮
-    // k[i=last h=last p=pos-1]
-    // k[i=0    h=0    p=pos  ] ⎫
-    //            ⋮             ⎬ Newly extended values
-    // k[i=last h=last p=pos  ] ⎭
+    // `k_colmaj` is a Vec (same for `v_colmaj`):
+    // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    // ┃ k[i=0    h=0    p=0    ] ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=1    h=0    p=0    ] ┃
+    // ┠──────────────────────────┨
+    // ┃            ⋮             ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=last h=0    p=0    ] ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=0    h=1    p=0    ] ┃
+    // ┠──────────────────────────┨
+    // ┃            ⋮             ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=last h=last p=0    ] ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=0    h=0    p=1    ] ┃
+    // ┠──────────────────────────┨
+    // ┃            ⋮             ┃
+    // ┠──────────────────────────┨
+    // ┃ k[i=last h=last p=pos-1] ┃
+    // ┠──────────────────────────┨ ┐
+    // ┃ k[i=0    h=0    p=pos  ] ┃ │
+    // ┠──────────────────────────┨ │
+    // ┃            ⋮             ┃ ├ Newly extended values
+    // ┠──────────────────────────┨ │
+    // ┃ k[i=last h=last p=pos  ] ┃ │
+    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┘
 
     let k = TypedTensor::<f32>::from_vec_col_major(
         vec![model.n_embd / model.n_head, model.n_head, pos + 1],
@@ -318,20 +328,20 @@ fn multi_head_attention(
         vec![model.n_embd / model.n_head, model.n_head, pos + 1],
         v_colmaj.to_vec(),
     )?;
-    // k is a 3D TypedTensor (same for v):
-    //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-    //    ┃ k[i=0    h=last p=0    ] │ ⋯ │ k[i=0    h=last p=pos  ] ┃
-    //                                ⋰                            ─┨
-    // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┃
-    // ┃ k[i=0    h=0    p=0    ] │ ⋯ │ k[i=0    h=0    p=pos  ] ┃ ─┨
-    // ┠──────────────────────────┼───┼──────────────────────────┨  ┃
-    // ┃            ⋮             │   │            ⋮             ┃ ━┛
-    // ┠──────────────────────────┼───┼──────────────────────────┨
-    // ┃ k[i=last h=0    p=0    ] │ ⋯ │ k[i=last h=0    p=pos  ] ┃
-    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    // `k` is a 3D TypedTensor (same for `v`):
+    //    ┏━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━┓
+    //    ┃ k[i=0    h=last p=0  ] │ ⋯ │ k[i=0    h=last p=pos] ┃
+    //                              ⋰                          ─┨
+    // ┏━━━━━━━━━━━━━━━━━━━━━━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━┓  ┃
+    // ┃ k[i=0    h=0    p=0  ] │ ⋯ │ k[i=0    h=0    p=pos] ┃ ─┨
+    // ┠────────────────────────┼───┼────────────────────────┨  ┃
+    // ┃            ⋮           │   │            ⋮           ┃ ━┛
+    // ┠────────────────────────┼───┼────────────────────────┨
+    // ┃ k[i=last h=0    p=0  ] │ ⋯ │ k[i=last h=0    p=pos] ┃
+    // ┗━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┷━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-    // z = transpose.(k) .* q ./ √Float32(model.n_embd ÷ model.n_head)
-    let z = [&k, &q]
+    // y = transpose.(k) .* q ./ √Float32(model.n_embd ÷ model.n_head)
+    let y = [&k, &q]
         .einsum("ihp,ih->ph", backend)?
         .mul(&model.c1, backend)?;
     // 2D TypedTensor:
@@ -346,9 +356,9 @@ fn multi_head_attention(
     // ┃ p=pos h=0    ┃
     // ┗━━━━━━━━━━━━━━┛
 
-    // maximum(z)
+    // maximum(y)
     let maximum = {
-        let colmaj: Vec<f32> = z
+        let colmaj: Vec<f32> = y
             .host_data()?
             .chunks(pos + 1)
             .map(|chunk| *chunk.iter().max_by(|a, b| a.total_cmp(b)).unwrap())
@@ -363,8 +373,8 @@ fn multi_head_attention(
     // ┃ h=0    ┃
     // ┗━━━━━━━━┛
 
-    // z .- maximum(z)
-    let numerator = z.sub(&maximum, backend)?.exp(backend)?;
+    // y .- maximum(y)
+    let numerator = y.sub(&maximum, backend)?.exp(backend)?;
     // 2D TypedTensor:
     //    ┏━━━━━━━━━━━━━━┓
     //    ┃ p=0   h=last ┃
@@ -377,7 +387,7 @@ fn multi_head_attention(
     // ┃ p=pos h=0    ┃
     // ┗━━━━━━━━━━━━━━┛
 
-    // sum(z .- maximum(z))
+    // sum(y .- maximum(y))
     let denominator = numerator
         .reduce_sum(&[0], backend)?
         .reshape(&[1, model.n_head], backend)?;
@@ -389,7 +399,8 @@ fn multi_head_attention(
     // ┃ h=0    ┃
     // ┗━━━━━━━━┛
 
-    // softmax = (z .- maximum(z)) ./ sum(z .- maximum(z))
+    // Numerically stable softmax
+    // softmax(y) = (y .- maximum(y)) ./ sum(y .- maximum(y))
     let softmax = numerator.div(&denominator, backend)?;
     // 2D TypedTensor:
     //    ┏━━━━━━━━━━━━━━┓
@@ -403,72 +414,73 @@ fn multi_head_attention(
     // ┃ p=pos h=0    ┃
     // ┗━━━━━━━━━━━━━━┛
 
-    // attention = v .* softmax
-    let attention = [&v, &softmax].einsum("ihp,ph->ih", backend)?;
-    // attention is a 2D TypedTensor:
-    //    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-    //    ┃ attention[i=0    h=last] ┃
-    //                ⋰             ─┨
-    // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ┃
-    // ┃ attention[i=0    h=0   ] ┃ ─┨
-    // ┠──────────────────────────┨  ┃
-    // ┃            ⋮             ┃ ━┛
-    // ┠──────────────────────────┨
-    // ┃ attention[i=last h=0   ] ┃
-    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    // Scaled dot-product attention
+    // a = v .* softmax(y)
+    let a = [&v, &softmax].einsum("ihp,ph->ih", backend)?;
+    // `a` is a 2D TypedTensor:
+    //    ┏━━━━━━━━━━━━━━━━━━┓
+    //    ┃ a[i=0    h=last] ┃
+    //            ⋰         ─┨
+    // ┏━━━━━━━━━━━━━━━━━━┓  ┃
+    // ┃ a[i=0    h=0   ] ┃ ─┨
+    // ┠──────────────────┨  ┃
+    // ┃        ⋮         ┃ ━┛
+    // ┠──────────────────┨
+    // ┃ a[i=last h=0   ] ┃
+    // ┗━━━━━━━━━━━━━━━━━━┛
 
-    // y = vcat(attention...)
-    let y = attention.reshape(&[model.n_embd, 1], backend)?;
-    // y is a 1D TypedTensor:
-    // ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-    // ┃ attention[i=0    h=0   ] ┃
-    // ┠──────────────────────────┨
-    // ┃ attention[i=1    h=0   ] ┃
-    // ┠──────────────────────────┨
-    // ┃            ⋮             ┃
-    // ┠──────────────────────────┨
-    // ┃ attention[i=last h=0   ] ┃
-    // ┠──────────────────────────┨
-    // ┃ attention[i=0    h=1   ] ┃
-    // ┠──────────────────────────┨
-    // ┃            ⋮             ┃
-    // ┠──────────────────────────┨
-    // ┃ attention[i=last h=last] ┃
-    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    // x = vcat(a...)
+    let x = a.reshape(&[model.n_embd, 1], backend)?;
+    // `x` is a 1D TypedTensor:
+    // ┏━━━━━━━━━━━━━━━━━━┓
+    // ┃ a[i=0    h=0   ] ┃
+    // ┠──────────────────┨
+    // ┃ a[i=1    h=0   ] ┃
+    // ┠──────────────────┨
+    // ┃        ⋮         ┃
+    // ┠──────────────────┨
+    // ┃ a[i=last h=0   ] ┃
+    // ┠──────────────────┨
+    // ┃ a[i=0    h=1   ] ┃
+    // ┠──────────────────┨
+    // ┃        ⋮         ┃
+    // ┠──────────────────┨
+    // ┃ a[i=last h=last] ┃
+    // ┗━━━━━━━━━━━━━━━━━━┛
 
-    // y = layer.w12 * y + layer.b12
-    let y = layer.w12.matmul(&y, backend)?.add(&layer.b12, backend)?;
+    // x = layer.w12 * x + layer.b12
+    let x = layer.w12.matmul(&x, backend)?.add(&layer.b12, backend)?;
 
-    Ok(y)
+    Ok(x)
 }
 
 fn feed_forward(
-    y: &TypedTensor<f32>,
+    x: &TypedTensor<f32>,
     layer: &Layer,
     model: &Model,
     backend: &mut CpuBackend,
 ) -> Result<TypedTensor<f32>, Box<dyn Error>> {
-    // y = layer.w21 * y + layer.b21
-    let y = layer.w21.matmul(y, backend)?.add(&layer.b21, backend)?;
+    // x = layer.w21 * x + layer.b21
+    let x = layer.w21.matmul(x, backend)?.add(&layer.b21, backend)?;
 
     // This formula is based on the paper that introduced GELU.
     // https://arxiv.org/abs/1606.08415
-    // y = (tanh.((y .^ 3 * 0.044715f0 + y) * √(2.0f0 / π)) .+ 1.0f0) .* y * 0.5f0
-    let y = y
-        .mul(&y, backend)?
-        .mul(&y, backend)?
+    // x = (tanh.((x .^ 3 * 0.044715f0 + x) * √(2.0f0 / π)) .+ 1.0f0) .* x * 0.5f0
+    let x = x
+        .mul(&x, backend)?
+        .mul(&x, backend)?
         .mul(&model.c2, backend)?
-        .add(&y, backend)?
+        .add(&x, backend)?
         .mul(&model.c3, backend)?
         .tanh(backend)?
         .add(&model.c4, backend)?
-        .mul(&y, backend)?
+        .mul(&x, backend)?
         .mul(&model.c5, backend)?;
 
-    // y = layer.w22 * y + layer.b22
-    let y = layer.w22.matmul(&y, backend)?.add(&layer.b22, backend)?;
+    // x = layer.w22 * x + layer.b22
+    let x = layer.w22.matmul(&x, backend)?.add(&layer.b22, backend)?;
 
-    Ok(y)
+    Ok(x)
 }
 
 // The transformer of the GPT-2 architecture.
