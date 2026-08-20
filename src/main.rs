@@ -142,12 +142,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             num_prompted_tokens += 1;
         }
 
-        let logits = transformer::transform(
-            &mut k_colmaj_caches,
-            &mut v_colmaj_caches,
-            &model,
+        let logits = transformer::transformer(
             id,
             pos,
+            &model,
+            &mut k_colmaj_caches,
+            &mut v_colmaj_caches,
             &mut backend,
         )?;
         num_processed_tokens += 1;
