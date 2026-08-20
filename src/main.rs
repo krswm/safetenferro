@@ -103,25 +103,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Inference ====
 
-    // k and v are 3D tensors with indices (i, h, p).
-    //
-    // - i = 0..(n_embd / n_head)  Index for elements in a head vector
-    // - h = 0..n_head             Index for head vector
-    // - p = 0..(pos + 1)          Token position
-    //
-    // `pos` increases by one for each transformer call, so overall lengths of k and v grow.
-    //
-    // I deliberately chose this order of indices from the fact that tenferro uses column-major.
-    //
-    // For each transformer layer, this program has to concatinate a new head-vector to the cached matrix.
-    // Since p is the last index, this program only has to extend the new head-vector
-    // to the column-major representation of the cached matrix.
-    //
-    // For each transformer layer, this program obtains a new head-vector.
-    // A head-vector is ordered like:
-    //   (i=0, h=0), (i=1, h=0), ..., (i=last, h=0), (i=0, h=1), (i=1, h=1), ...
-    // Since i is the first and h is the second indices, this program can extend the new head-vector
-    // to the column-major representation of the cached matrix without transposing.
     let mut k_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
     let mut v_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
 
