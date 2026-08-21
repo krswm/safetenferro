@@ -24,6 +24,7 @@ use serde_json::Value;
 use tenferro_cpu::CpuBackend;
 
 pub mod loader;
+pub mod model;
 pub mod tokenizer;
 pub mod transformer;
 
@@ -86,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let reader = BufReader::new(file);
             serde_json::from_reader(reader)?
         };
-        transformer::get_model(tensors, config)?
+        model::get_model(tensors, config)?
     };
 
     // ==== Tokenization ====
