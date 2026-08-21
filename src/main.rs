@@ -22,6 +22,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
+use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
 
 pub mod loader;
 pub mod model;
@@ -30,10 +31,10 @@ pub mod transformer;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
+    if args.len() != 4 {
         println!("GPT-2 Inference with tenferro");
         println!(
-            "Usage: \x1b[1m{} <path to model repository> <your prompt>\x1b[22m",
+            "Usage: \x1b[1m{} <path to model repository> <sampling temperature> <your prompt>\x1b[22m",
             &args[0]
         );
         println!("You may have to enclose 'your prompt' with quotes.");
@@ -90,10 +91,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         model::get_model(tensors, config)?
     };
 
+    // ==== Temperature ====
+
+    let is_deterministic, temperature = {
+        let value = args[2].parse()?;
+        if value < 0.0f32 {
+            println!("Temperature must be ≥ 0.0.");
+            return Ok(());
+        }
+        value == 0.0f32, TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+    }
+
     // ==== Tokenization ====
 
     // Token IDs
-    let ids = tokenizer::tokenize(&token_to_id, &ranks, &args[2])?;
+    let ids = tokenizer::tokenize(&token_to_id, &ranks, &args[3])?;
     if ids.is_empty() {
         println!("Your prompt should not be empty.");
         return Ok(());
@@ -104,15 +116,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Inference ====
 
-    let mut k_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
-    let mut v_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
-
-    let mut backend = CpuBackend::new();
-    let mut id = 0usize;
-    let mut utf8_buffer: Vec<u8> = Vec::new();
     let mut num_prompted_tokens = 0usize;
     let mut num_processed_tokens = 0usize;
     let mut num_generated_tokens = 0usize;
+    let mut id = 0usize;
+    let mut utf8_buffer: Vec<u8> = Vec::new();
+    let mut k_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
+    let mut v_colmaj_caches = vec![Vec::<f32>::new(); model.n_layer];
+    let mut backend = CpuBackend::new();
 
     let performance_timer = Instant::now();
     for pos in 0..model.n_ctx {
@@ -135,14 +146,37 @@ fn main() -> Result<(), Box<dyn Error>> {
         num_processed_tokens += 1;
 
         if pos >= ids.len() - 1 {
-            // Greedy sampling: Choose the token with the highest probability.
-            id = logits
-                .host_data()?
-                .iter()
-                .enumerate()
-                .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
-                .map(|(id, _)| id)
-                .unwrap();
+            if is_deterministic {
+                id = logits
+                    .host_data()?
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
+                    .map(|(id, _)| id)
+                    .unwrap();
+            } else {
+                // maximum(logits)
+                let maximum = {
+                    let value = logits
+                        .host_data()?
+                        .max_by(|value0, value1| value0.total_cmp(value1))
+                        .unwrap();
+                    TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
+                }
+
+                // (logits .- maximum(logits)) ./ temperature
+                let numerator = logits
+                    .sub(&maximum, &mut backend)?
+                    .div(&temperature, &mut backend)?;
+
+                // sum((logits .- maximum(logits)) ./ temperature)
+                let denominator = numerator
+                    .reduce_sum(&[1], &mut backend)?
+                    .reshape(&[1, model.vocab_size], &mut backend)?;
+
+                // (logits .- maximum(logits)) ./ temperature ./ sum((logits .- maximum(logits)) ./ temperature)
+                let x = numerator.div(&denominator, &mut backend)?;
+            }
             let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
             print!("\x1b[1m{decoded}\x1b[22m");
             std::io::stdout().flush()?;

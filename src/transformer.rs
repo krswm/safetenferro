@@ -186,7 +186,7 @@ fn multi_head_attention(
         let colmaj: Vec<f32> = y
             .host_data()?
             .chunks(pos + 1)
-            .map(|chunk| *chunk.iter().max_by(|a, b| a.total_cmp(b)).unwrap())
+            .map(|chunk| *chunk.iter().max_by(|value0, value1| value0.total_cmp(value1)).unwrap())
             .collect();
         TypedTensor::<f32>::from_vec_col_major(vec![1, model.n_head], colmaj)?
     };
