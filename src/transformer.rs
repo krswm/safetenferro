@@ -137,13 +137,13 @@ fn multi_head_attention(
     // ┃            ⋮             ┃
     // ┠──────────────────────────┨
     // ┃ k[i=last h=last p=pos-1] ┃
-    // ┠──────────────────────────┨ ┐
+    // ┠──────────────────────────┨ ╮
     // ┃ k[i=0    h=0    p=pos  ] ┃ │
     // ┠──────────────────────────┨ │
     // ┃            ⋮             ┃ ├ Newly extended values
     // ┠──────────────────────────┨ │
     // ┃ k[i=last h=last p=pos  ] ┃ │
-    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┘
+    // ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ╯
 
     let k = TypedTensor::<f32>::from_vec_col_major(
         vec![model.n_embd / model.n_head, model.n_head, pos + 1],
@@ -186,7 +186,12 @@ fn multi_head_attention(
         let colmaj: Vec<f32> = y
             .host_data()?
             .chunks(pos + 1)
-            .map(|chunk| *chunk.iter().max_by(|value0, value1| value0.total_cmp(value1)).unwrap())
+            .map(|chunk| {
+                *chunk
+                    .iter()
+                    .max_by(|value0, value1| value0.total_cmp(value1))
+                    .unwrap()
+            })
             .collect();
         TypedTensor::<f32>::from_vec_col_major(vec![1, model.n_head], colmaj)?
     };
@@ -349,6 +354,8 @@ pub fn transformer(
     // x = transpose(model.wte) * x
     x = model.wte_transposed.matmul(&x, backend)?;
 
+    show(&x)?;
+
     Ok(x)
 }
 
@@ -367,19 +374,22 @@ fn show(tensor: &TypedTensor<f32>) -> Result<(), Box<dyn Error>> {
         return Err("`num_cols` not 0".into());
     }
 
-    println!("┌{:─^29}┐", "");
+    println!("┏{:━^14}┯━━━┯{:━^14}┓ ╮", "", "");
     println!(
-        "│ {:<+12.6e} ⋯ {:<+12.6e} │",
+        "┃ {:<+12.6e} │ ⋯ │ {:<+12.6e} ┃ │",
         tensor.get(&[0, 0]).unwrap(),
         tensor.get(&[0, num_cols - 1]).unwrap(),
     );
-    println!("│ {:^12}   {:^12} {num_rows}", "⋮", "⋮");
+    println!("┠{:─^14}┼───┼{:─^14}┨ │", "", "");
+    println!("┃ {:^12} │   │ {:^12} ┃ {num_rows}", "⋮", "⋮");
+    println!("┠{:─^14}┼───┼{:─^14}┨ │", "", "");
     println!(
-        "│ {:<+12.6e} ⋯ {:<+12.6e} │",
+        "┃ {:<+12.6e} │ ⋯ │ {:<+12.6e} ┃ │",
         tensor.get(&[num_rows - 1, 0]).unwrap(),
         tensor.get(&[num_rows - 1, num_cols - 1]).unwrap(),
     );
-    println!("└{num_cols:─^29}┘");
+    println!("┗{:━^14}┷━━━┷{:━^14}┛ ╯", "", "");
+    println!("╰{num_cols:─^33}╯");
 
     Ok(())
 }

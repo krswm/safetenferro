@@ -93,14 +93,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ==== Temperature ====
 
-    let is_deterministic, temperature = {
+    let (is_deterministic, temperature) = {
         let value = args[2].parse()?;
         if value < 0.0f32 {
             println!("Temperature must be ≥ 0.0.");
             return Ok(());
         }
-        value == 0.0f32, TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
-    }
+        (
+            value == 0.0f32,
+            TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?,
+        )
+    };
 
     // ==== Tokenization ====
 
@@ -130,8 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         if pos < ids.len() {
             id = ids[pos];
             let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-            print!("\x1b[1;90m{decoded}\x1b[22;39m");
-            std::io::stdout().flush()?;
+            // print!("\x1b[1;90m{decoded}\x1b[22;39m");
+            // std::io::stdout().flush()?;
             num_prompted_tokens += 1;
         }
 
@@ -146,6 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         num_processed_tokens += 1;
 
         if pos >= ids.len() - 1 {
+            /*
             if is_deterministic {
                 id = logits
                     .host_data()?
@@ -162,7 +166,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .max_by(|value0, value1| value0.total_cmp(value1))
                         .unwrap();
                     TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
-                }
+                };
 
                 // (logits .- maximum(logits)) ./ temperature
                 let numerator = logits
@@ -177,9 +181,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // (logits .- maximum(logits)) ./ temperature ./ sum((logits .- maximum(logits)) ./ temperature)
                 let x = numerator.div(&denominator, &mut backend)?;
             }
+            */
+            id = logits
+                .host_data()?
+                .iter()
+                .enumerate()
+                .max_by(|(_, prob0), (_, prob1)| prob0.total_cmp(prob1))
+                .map(|(id, _)| id)
+                .unwrap();
             let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
-            print!("\x1b[1m{decoded}\x1b[22m");
-            std::io::stdout().flush()?;
+            // print!("\x1b[1m{decoded}\x1b[22m");
+            // std::io::stdout().flush()?;
             num_generated_tokens += 1;
         }
     }
