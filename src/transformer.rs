@@ -354,8 +354,6 @@ pub fn transformer(
     // x = transpose(model.wte) * x
     x = model.wte_transposed.matmul(&x, backend)?;
 
-    show(&x)?;
-
     Ok(x)
 }
 
