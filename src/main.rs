@@ -184,11 +184,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 let rand_prob = rand::random_range(0.0f32..1.0f32);
                 let mut total_prob = 0.0f32;
-                for (id_, prob) in x.host_data()?.iter().enumerate() {
+                for (id, prob) in x.host_data()?.iter().enumerate() {
                     total_prob += prob;
                     if rand_prob < total_prob {
-                        println!("{prob:?}");
-                        id = id_;
                         break;
                     }
                 }
