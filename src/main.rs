@@ -94,12 +94,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ==== Temperature ====
 
     let (is_deterministic, beta) = {
-        let temperature = args[2].parse()?;
+        let temperature: f32 = args[2].parse()?;
         if temperature < 0.0f32 {
             println!("Temperature must be ≥ 0.0.");
             return Ok(());
         }
-        let value = 1.0f32 / value;
+        let value = 1.0f32 / temperature;
+        println!("{value:?}");
         (
             temperature == 0.0f32,
             TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?,
@@ -164,27 +165,33 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 // maximum(logits ./ temperature)
                 let maximum = {
-                    let value = x
+                    let value = *x
                         .host_data()?
+                        .iter()
                         .max_by(|value0, value1| value0.total_cmp(value1))
                         .unwrap();
                     TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?
                 };
 
-                // numerator = (logits ./ temperature) .- maximum(logits ./ temperature)
-                let numerator = logits
-                    .sub(&maximum, &mut backend)?
-                    .div(&temperature, &mut backend)?;
+                // numerator = exp.((logits ./ temperature) .- maximum(logits ./ temperature))
+                let numerator = x.sub(&maximum, &mut backend)?.exp(&mut backend)?;
 
-                // denominator = sum((logits ./ temperature) .- maximum(logits ./ temperature))
-                let denominator = numerator
-                    .reduce_sum(&[1], &mut backend)?
-                    .reshape(&[1, model.vocab_size], &mut backend)?;
+                // denominator = sum(exp.((logits ./ temperature) .- maximum(logits ./ temperature)))
+                let denominator = numerator.reduce_sum(&[0], &mut backend)?;
 
                 // numerator ./ denominator
                 let x = numerator.div(&denominator, &mut backend)?;
 
-                id = 2269usize;
+                let rand_prob = rand::random_range(0.0f32..1.0f32);
+                let mut total_prob = 0.0f32;
+                for (id_, prob) in x.host_data()?.iter().enumerate() {
+                    total_prob += prob;
+                    if rand_prob < total_prob {
+                        println!("{prob:?}");
+                        id = id_;
+                        break;
+                    }
+                }
             }
             let decoded = tokenizer::decode_unique_encoding(&id_to_token[&id], &mut utf8_buffer);
             print!("\x1b[1m{decoded}\x1b[22m");
