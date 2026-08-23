@@ -1,37 +1,16 @@
-# My Note
-
-## 2026-08-05
-
-I completed my KV-cache implementation in Julia.
-Now I'll do that with tenferro!
-I copied my Julia version in `julia` for my reference.
-Future me, delete it after completed!
-
-## 2026-08-09
-
-I rewrote my transformer.
-Now it uses KV-cache.
-The attention code is quite long now.
-I think it's time to use EinSum!
-
-## 2026-08-16
-
-Tenferro becomes v0.3!
-I'm going to bump it.
-
 # GPT-2 Inference with tenferro
 
 I built a GPT-2 inference engine from scratch in Rust.
 
 It is built on [tenferro](https://github.com/tensor4all/tenferro-rs), a Rust-native tensor library.
 
-![Demo](asset/demo.gif)
+![(Cherrypicked) demo: Hallucination?](asset/demo.gif)
 
 I also built [a Julia counterpart](https://github.com/krswm/slope-jl).
 
 ## Quickstart
 
-I made this project just for educational purpose. Use at your own risk.
+I made this project just for **educational purpose**. Use at your own risk.
 
 It is assumed that you have cURL, Git, and Cargo installed on your machine.
 
@@ -48,7 +27,7 @@ git clone https://github.com/krswm/slope-rs.git
 cd slope-rs
 ```
 
-**Build the program.**
+**Compile the program.**
 
 ```
 cargo build --release
@@ -58,10 +37,12 @@ cargo build --release
 The GPT-2 model is not for chat conversation, but for text continuation.
 
 ```
-./target/release/slope-rs ../model 'Natural language processing is a branch of computer science. We study'
+target/release/slope-rs ../model 0.75 'Rust is a programming language. It is fun to code in Rust.'
 ```
 
-Press `Control+C` to stop generating text.
+The second parameter (`0.75` here) is sampling temperature, which controls the randomness of the generated text.
+Set it to `0.0` to make the generated text deterministic.
+Increase it to make the generated text more *creative*.
 
 ## Supported Models
 
@@ -90,8 +71,6 @@ I have verified that this program works with the following models.
 
 ## My Future Plans
 
-- Make the text generation not deterministic. Apply stochasticity for sampling.
-- Optimize the inference. Use techniques such as KV-cache.
 - Use GPU backend. tenferro provides CUDA and WebGPU backend. (I’m not sure whether I currently have an access for such hardware though…)
 - Support variety of LLM architectures beyond GPT-2 such as Llama 2.
 - Ultimately, implement LLM training from scratch. (I’m interested on [TinyStories](https://arxiv.org/pdf/2305.07759).)
@@ -107,7 +86,9 @@ I have verified that this program works with the following models.
 
 This is a hobby project of mine I started from scratch.
 
-I started this project on 2026-07-03 and finished my first implementation on 2026-07-14.
+- 2026-07-03: I started this project.
+- 2026-07-14: I finished implementing an GPT-2 inference engine in Julia.
+- 2026-08-23: I finished rewriting the transformer to use KV-cache.
 
-I used open source LLM inference engines (Ollama, etc.) and open source LLM models (TinyLlama, GPT-2, etc.) only for the purpose to observe their behavior as LLM architecture.
-Except for that, I did **not** use generative AI for this project at all.
+I used open source LLM inference engines (Ollama, etc.) and open weight LLM models (TinyLlama, GPT-2, etc.) only for the purpose to observe their behavior as LLM architecture.
+Except for this, I did **not** use generative AI for this project at all.
