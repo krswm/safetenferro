@@ -17,85 +17,6 @@
 use std::collections::HashMap;
 use std::error::Error;
 
-/// Tokenize an input with the BPE algorithm.
-pub fn tokenize(
-    token_to_id: &HashMap<String, usize>,
-    ranks: &HashMap<(String, String), u32>,
-    input: &str,
-) -> Result<Vec<usize>, Box<dyn Error>> {
-    let raw_tokens = {
-        let mut raw_tokens = Vec::new();
-        for (i_line, line) in input.split("\n").enumerate() {
-            if i_line >= 1 {
-                raw_tokens.push(String::from("\n"));
-            }
-
-            for (i_word, word) in line.split(" ").enumerate() {
-                if i_word == 0 && !word.is_empty() {
-                    raw_tokens.push(word.to_string());
-                } else if i_word >= 1 {
-                    raw_tokens.push(format!(" {word}"));
-                }
-            }
-        }
-        raw_tokens
-    };
-
-    let tokens: Vec<String> = raw_tokens
-        .iter()
-        .map(|raw_token| encode_unique_encoding(raw_token))
-        .collect();
-
-    // Token IDs
-    let ids = {
-        let mut ids = Vec::new();
-        for token in tokens.iter() {
-            if token_to_id.contains_key(token) {
-                ids.push(token_to_id[token]);
-            } else {
-                // ==== Merge ====
-
-                let mut symbols: Vec<String> = token.chars().map(|x| x.to_string()).collect();
-
-                while symbols.len() >= 2 {
-                    let pairs = {
-                        let mut pairs = Vec::with_capacity(symbols.len() - 1);
-                        for i_char in 0..symbols.len() - 1 {
-                            let token0 = symbols[i_char].clone();
-                            let token1 = symbols[i_char + 1].clone();
-                            pairs.push((token0, token1));
-                        }
-                        pairs
-                    };
-
-                    let mut best_rank = u32::MAX;
-                    let mut best_i_pair = usize::MAX;
-                    for (i_pair, pair) in pairs.iter().enumerate() {
-                        if ranks.contains_key(pair) && ranks[pair] < best_rank {
-                            best_rank = ranks[pair];
-                            best_i_pair = i_pair;
-                        }
-                    }
-                    if best_i_pair == usize::MAX {
-                        break;
-                    }
-
-                    symbols[best_i_pair] =
-                        format!("{}{}", symbols[best_i_pair], symbols[best_i_pair + 1]);
-                    symbols.remove(best_i_pair + 1);
-                }
-
-                for symbol in symbols {
-                    ids.push(token_to_id[&symbol]);
-                }
-            }
-        }
-        ids
-    };
-
-    Ok(ids)
-}
-
 // GPT-2 has a unique encoding.
 // e.g.: 'Ġ' (U+0120) → 0x20
 
@@ -161,4 +82,83 @@ pub fn decode_unique_encoding(text: &str, utf8_buffer: &mut Vec<u8>) -> String {
             }
         }
     }
+}
+
+/// Tokenize `input` with the BPE algorithm.
+pub fn tokenize(
+    token_to_id: &HashMap<String, usize>,
+    ranks: &HashMap<(String, String), u32>,
+    input: &str,
+) -> Result<Vec<usize>, Box<dyn Error>> {
+    // Split `input` by "\n" and " " and get `raw_tokens`.
+    // "\n" is a `raw_token` by itself.
+    // " " is attached to the next word.
+    let raw_tokens: Vec<String> = {
+        let mut raw_tokens = Vec::new();
+        for (i_line, line) in input.split("\n").enumerate() {
+            if i_line >= 1 {
+                raw_tokens.push(String::from("\n"));
+            }
+
+            for (i_word, word) in line.split(" ").enumerate() {
+                if i_word == 0 && !word.is_empty() {
+                    raw_tokens.push(word.to_string());
+                } else if i_word >= 1 {
+                    raw_tokens.push(format!(" {word}"));
+                }
+            }
+        }
+        raw_tokens
+            .iter()
+            .map(|raw_token| encode_unique_encoding(raw_token))
+            .collect()
+    };
+
+    // Token IDs
+    let ids = {
+        let mut ids = Vec::new();
+        for raw_token in raw_tokens.iter() {
+            if token_to_id.contains_key(raw_token) {
+                // `raw_token` is already a valid token.
+                ids.push(token_to_id[raw_token]);
+            } else {
+                // `raw_token` is not a valid token.
+                // Split `raw_token` and get valid tokens with the merge algorithm.
+                let mut tokens: Vec<String> = raw_token.chars().map(|x| x.to_string()).collect();
+                while tokens.len() >= 2 {
+                    let pairs = {
+                        let mut pairs = Vec::with_capacity(tokens.len() - 1);
+                        for i_char in 0..tokens.len() - 1 {
+                            let token0 = tokens[i_char].clone();
+                            let token1 = tokens[i_char + 1].clone();
+                            pairs.push((token0, token1));
+                        }
+                        pairs
+                    };
+                    let mut best_rank = u32::MAX;
+                    let mut best_i_pair = usize::MAX;
+                    for (i_pair, pair) in pairs.iter().enumerate() {
+                        if ranks.contains_key(pair) && ranks[pair] < best_rank {
+                            best_rank = ranks[pair];
+                            best_i_pair = i_pair;
+                        }
+                    }
+                    if best_i_pair == usize::MAX {
+                        break;
+                    }
+
+                    tokens[best_i_pair] =
+                        format!("{}{}", tokens[best_i_pair], tokens[best_i_pair + 1]);
+                    tokens.remove(best_i_pair + 1);
+                }
+
+                for token in tokens {
+                    ids.push(token_to_id[&token]);
+                }
+            }
+        }
+        ids
+    };
+
+    Ok(ids)
 }

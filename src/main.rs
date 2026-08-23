@@ -41,8 +41,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    // ==== Loading Files ====
-
     let (token_to_id, id_to_token) = {
         let path = &format!("{}/vocab.json", &args[1]);
         let file = File::open(path)?;
@@ -91,8 +89,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         model::get_model(tensors, config)?
     };
 
-    // ==== Temperature ====
-
     let (is_deterministic, beta) = {
         let temperature: f32 = args[2].parse()?;
         if temperature < 0.0f32 {
@@ -100,7 +96,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
         let value = 1.0f32 / temperature;
-        println!("{value:?}");
         (
             temperature == 0.0f32,
             TypedTensor::<f32>::from_vec_col_major(vec![], vec![value])?,
@@ -184,9 +179,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 let rand_prob = rand::random_range(0.0f32..1.0f32);
                 let mut total_prob = 0.0f32;
-                for (id, prob) in x.host_data()?.iter().enumerate() {
+                for (x_id, prob) in x.host_data()?.iter().enumerate() {
                     total_prob += prob;
                     if rand_prob < total_prob {
+                        id = x_id;
                         break;
                     }
                 }

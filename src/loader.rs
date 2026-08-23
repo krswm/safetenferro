@@ -81,8 +81,11 @@ pub fn load_safetensors(
         let begin = info.data_offsets.0;
         let end = begin + size;
 
-        // ⎛a₁₁ a₁₂ a₁₃⎞
-        // ⎝a₂₁ a₂₂ a₂₃⎠
+        // ┏━━━━━┯━━━━━┯━━━━━┓
+        // ┃ a₁₁ │ a₁₂ │ a₁₃ ┃
+        // ┠─────┼─────┼─────┨
+        // ┃ a₂₁ │ a₂₂ │ a₂₃ ┃
+        // ┗━━━━━┷━━━━━┷━━━━━┛
         //
         // Safetensors uses row-major: a₁₁ a₁₂ a₁₃ a₂₁ a₂₂ a₂₃.
         // https://github.com/safetensors/safetensors#format
