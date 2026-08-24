@@ -65,6 +65,7 @@ I have verified that this program works with the following models.
 ## Source Files
 
 - [`src/loader.rs`](src/loader.rs) loads a file in [the Safetensors format](https://github.com/safetensors/safetensors) and converts the tensors into tenferro’s `TypedTensor`s.
+- [`src/model.rs`](src/model.rs) builds a `struct` holding the parameters of the model.
 - [`src/tokenizer.rs`](src/tokenizer.rs) converts your prompt into numbers that the model understands (tokens) with the BPE algorithm.
 - [`src/transformer.rs`](src/transformer.rs) is the heart of the GPT-2 inferenece. It receives tokens (your prompt + already generated text) and predicts the next token.
 - [`src/main.rs`](src/main.rs) loads files from the GPT-2 repository and generates text.
