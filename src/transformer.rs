@@ -19,7 +19,7 @@ use std::iter::zip;
 
 use tenferro_cpu::CpuBackend;
 use tenferro_einsum::TypedTensorEinsumExt;
-use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
+use tenferro_runtime::{TypedTensor, TypedTensorSessionOpsExt};
 
 use crate::model::{Layer, Model};
 

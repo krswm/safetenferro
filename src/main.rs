@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 use tenferro_cpu::CpuBackend;
-use tenferro_runtime::{TypedTensor, TypedTensorOpsExt};
+use tenferro_runtime::{TypedTensor, TypedTensorSessionOpsExt};
 
 pub mod loader;
 pub mod model;
