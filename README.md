@@ -4,9 +4,13 @@ I built a GPT-2 inference engine from scratch in Rust.
 
 It is built on [tenferro](https://github.com/tensor4all/tenferro-rs), a Rust-native tensor library.
 
-![(Cherrypicked) demo: Hallucination?](asset/demo.gif)
+![(Cherrypicked) demo](https://raw.githubusercontent.com/krswm/asset/main/slope-rs/demo.gif)
 
-I also built [a Julia counterpart](https://github.com/krswm/slope-jl).
+I also built:
+
+- [An inference engine for GPT-2 in Julia](https://github.com/krswm/slope-jl)
+- [An inference engine for Stable Diffusion in Rust](https://github.com/krswm/diff-rs)
+- [An inference engine for Stable Diffusion in Julia](https://github.com/krswm/diff-jl)
 
 ## Quickstart
 
@@ -88,7 +92,7 @@ I have verified that this program works with the following models.
 This is a hobby project of mine I started from scratch.
 
 - 2026-07-03: I started this project.
-- 2026-07-14: I finished implementing an GPT-2 inference engine in Julia.
+- 2026-07-14: I finished implementing an GPT-2 inference engine in Rust.
 - 2026-08-23: I finished rewriting the transformer to use KV-cache.
 
 I used open source LLM inference engines (Ollama, etc.) and open weight LLM models (TinyLlama, GPT-2, etc.) only for the purpose to observe their behavior as LLM architecture.
