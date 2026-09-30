@@ -135,3 +135,13 @@ pub fn load_safetensors(
 
     Ok(tensors)
 }
+
+// TDD!
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load() {
+    }
+}
