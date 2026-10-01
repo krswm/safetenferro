@@ -1,20 +1,31 @@
 use std::error::Error;
 
-use tenferro_runtime::{Tensor, TensorScalar, TypedTensor};
+use tenferro_runtime::{TensorScalar, TypedTensor};
 
+trait FromVecColMajor2: Sized {
+    fn from_vec_col_major_2<T>(shape: Vec<usize>, data: Vec<T>) -> Result<Self, Box<dyn Error>>
+    where
+        T: TensorScalar;
+}
+
+impl<T> FromVecColMajor2 for TypedTensor<T> {
+    fn from_vec_col_major_2<T>(shape: Vec<usize>, data: Vec<T>) -> Result<Self, Box<dyn Error>> {
+        self::from_vec_col_major(shape, data)
+    }
+}
+
+/*
 fn foo<T: TensorScalar>() -> Result<T, Box<dyn Error>> {
     let tensor = T::from_vec_col_major(vec![2, 2], vec![0.0, 1.0, 2.0, 3.0])?;
     Ok(tensor)
 }
+*/
 
 fn main() -> Result<(), Box<dyn Error>> {
     /*
     let tensor = TypedTensor::<f32>::from_vec_row_major(vec![2, 2], vec![0.0, 1.0, 2.0, 3.0])?;
     println!("{:?}", tensor.host_data());
     */
-
-    let tensor: Tensor = foo()?;
-    println!("{tensor:?}");
 
     Ok(())
 }
