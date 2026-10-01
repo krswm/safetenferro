@@ -3,33 +3,10 @@
 import numpy
 from safetensors.numpy import save_file
 
-
-def get(dtype: type) -> numpy.ndarray:
-    x = [
-        [
-            [0, 1, 2, 3],
-            [4, 5, 6, 7],
-            [8, 9, 10, 11],
-        ],
-        [
-            [12, 13, 14, 15],
-            [16, 17, 18, 19],
-            [20, 21, 22, 23],
-        ],
-    ]
-    return numpy.array(x, dtype=dtype)
-
-
-tensors = {
-    "F32": get(numpy.float32),
-    "F64": get(numpy.float64),
-    "I8": get(numpy.int8),
-    "U8": get(numpy.uint8),
-    "I16": get(numpy.int16),
-    "U16": get(numpy.uint16),
-    "I32": get(numpy.int32),
-    "U32": get(numpy.uint32),
-    "I64": get(numpy.int64),
-    "U64": get(numpy.uint64),
+tensors: dict[str, numpy.ndarray] = {
+    "F32": numpy.array(range(24), dtype=numpy.float32).reshape(2, 3, 4),
+    "F64": numpy.array(range(24), dtype=numpy.float64).reshape(2, 3, 4),
+    "I32": numpy.array(range(24), dtype=numpy.int32).reshape(2, 3, 4),
+    "I64": numpy.array(range(24), dtype=numpy.int64).reshape(2, 3, 4),
 }
 save_file(tensors, "test/tensors.safetensors")

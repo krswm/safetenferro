@@ -22,7 +22,7 @@ use std::iter::zip;
 
 use serde::Deserialize;
 use serde_json::Value;
-use tenferro_runtime::TypedTensor;
+use tenferro_runtime::{Tensor, TypedTensor};
 
 #[derive(Deserialize)]
 struct Info {
@@ -139,9 +139,37 @@ pub fn load_safetensors(
 // TDD!
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
-    fn test_load() {
+    fn test_load_safetensors_permuted() -> Result<(), Box<dyn Error>> {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("test/tensors.safetensors");
+
+        let tensors = load_safetensors_permuted(path)?;
+
+        let expected = HashMap::new();
+        expected.insert(
+            "F32",
+            Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
+        );
+        expected.insert(
+            "F64",
+            Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f64).collect())?,
+        );
+        expected.insert(
+            "I32",
+            Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i32).collect())?,
+        );
+        expected.insert(
+            "I64",
+            Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i64).collect())?,
+        );
+
+        assert_eq!(tensors, expected);
+
+        Ok(())
     }
 }
