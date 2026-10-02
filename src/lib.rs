@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn test_load_safetensors_permuted() -> Result<(), Box<dyn Error>> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("test/tensors.safetensors");
+        let out_dir = env!("OUT_DIR");
+        let path = PathBuf::from(&out_dir).join("tensors.safetensors");
 
         let tensors = load_safetensors_permuted(path)?;
 
