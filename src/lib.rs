@@ -152,19 +152,19 @@ mod tests {
 
         let expected = HashMap::new();
         expected.insert(
-            "F32",
+            "F32_tensor",
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
         );
         expected.insert(
-            "F64",
+            "F64_tensor",
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f64).collect())?,
         );
         expected.insert(
-            "I32",
+            "I32_tensor",
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i32).collect())?,
         );
         expected.insert(
-            "I64",
+            "I64_tensor",
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i64).collect())?,
         );
 
