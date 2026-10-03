@@ -14,15 +14,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// The specification of the Safetensors file format:
+// https://github.com/safetensors/safetensors#format
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
-use std::iter::zip;
+use std::path::Path;
+use num_traits::ops::bytes::FromBytes;
 
 use serde::Deserialize;
 use serde_json::Value;
-use tenferro_runtime::{Tensor, TypedTensor};
+use tenferro_runtime::{Tensor, TensorScalar};
 
 #[derive(Deserialize)]
 struct Info {
@@ -31,9 +35,72 @@ struct Info {
     data_offsets: (usize, usize),
 }
 
-/// Load a Safetensors file and convert the tensors into `tenferro_runtime::TypedTensor<f32>`.
-///
-/// [Specification of the Safetensors file format](https://github.com/safetensors/safetensors#format)
+fn get_tensor_permuted<T: FromBytes + TensorScalar>(byte_buffer: &[u8], shape: Vec<usize>, data_offsets: (usize, usize)) -> Result<Tensor, Box<dyn Error>> {
+    let size: usize = std::mem::size_of::<T>();
+
+    let begin = data_offsets.0;
+    let end: usize = begin + 4 * shape.iter().product();
+    if end < data_offsets.1 {
+        return Err("tensor data smaller than tensor shape suggests".into());
+    }
+
+    let colmaj: Vec<T> = byte_buffer[begin..end]
+        .chunks_exact(size)
+        .map(|chunk| T::from_le_bytes(chunk))
+        .collect();
+
+    let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
+
+    Ok(tensor)
+}
+
+pub fn load_safetensors_permuted<P: AsRef<Path>>(
+    safetensors_path: P,
+) -> Result<HashMap<String, Tensor>, Box<dyn Error>> {
+    let mut file = File::open(safetensors_path)?;
+
+    let header: HashMap<String, Value> = {
+        let header_size = {
+            let mut buffer = [0; 8];
+            file.read_exact(&mut buffer)?;
+            usize::from_le_bytes(buffer)
+        };
+
+        let mut buffer = vec![0; header_size];
+        file.read_exact(&mut buffer)?;
+        serde_json::from_slice(&buffer)?
+    };
+
+    let byte_buffer = {
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        buffer
+    };
+
+    let mut tensors = HashMap::new();
+
+    for (key, value) in header.into_iter() {
+        if key == "__metadata__" {
+            continue;
+        }
+
+        let info: Info = serde_json::from_value(value)?;
+
+        let tensor = match info.dtype.as_str() {
+            "F32" => get_tensor_permuted::<f32>(&byte_buffer, info.shape, info.data_offsets)?,
+            "F64" => get_tensor_permuted::<f64>(&byte_buffer, info.shape, info.data_offsets)?,
+            "I32" => get_tensor_permuted::<i32>(&byte_buffer, info.shape, info.data_offsets)?,
+            "I64" => get_tensor_permuted::<i64>(&byte_buffer, info.shape, info.data_offsets)?,
+            _ => Tensor::from_vec_col_major(vec![], vec![0])?,
+        };
+
+        tensors.insert(key, tensor);
+    }
+
+    Ok(tensors)
+}
+
+/*
 pub fn load_safetensors(
     path_to_model: &str,
 ) -> Result<HashMap<String, TypedTensor<f32>>, Box<dyn Error>> {
@@ -135,8 +202,8 @@ pub fn load_safetensors(
 
     Ok(tensors)
 }
+*/
 
-// TDD!
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
