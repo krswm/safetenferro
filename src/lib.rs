@@ -22,11 +22,31 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use num_traits::ops::bytes::FromBytes;
 
 use serde::Deserialize;
 use serde_json::Value;
 use tenferro_runtime::{Tensor, TensorScalar};
+
+trait FromLeByteSlice {
+    fn from_le_byte_slice(bytes: &[u8]) -> Self;
+}
+
+macro_rules! impl_from_le_byte_slice {
+    ($T:ty) => {
+        impl FromLeByteSlice for $T {
+            fn from_le_byte_slice(bytes: &[u8]) -> Self {
+                Self::from_le_bytes(bytes.try_into().unwrap())
+            }
+        }
+    };
+}
+impl_from_le_byte_slice!(f32);
+impl_from_le_byte_slice!(f64);
+impl_from_le_byte_slice!(i32);
+impl_from_le_byte_slice!(i64);
+
+// Now I learned generics, traits, and macros!
+// Rust is so much fun!
 
 #[derive(Deserialize)]
 struct Info {
@@ -35,18 +55,22 @@ struct Info {
     data_offsets: (usize, usize),
 }
 
-fn get_tensor_permuted<T: FromBytes + TensorScalar>(byte_buffer: &[u8], shape: Vec<usize>, data_offsets: (usize, usize)) -> Result<Tensor, Box<dyn Error>> {
+fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
+    byte_buffer: &[u8],
+    shape: Vec<usize>,
+    data_offsets: (usize, usize),
+) -> Result<Tensor, Box<dyn Error>> {
     let size: usize = std::mem::size_of::<T>();
 
     let begin = data_offsets.0;
-    let end: usize = begin + 4 * shape.iter().product();
+    let end = begin + 4 * shape.iter().product::<usize>();
     if end < data_offsets.1 {
         return Err("tensor data smaller than tensor shape suggests".into());
     }
 
     let colmaj: Vec<T> = byte_buffer[begin..end]
         .chunks_exact(size)
-        .map(|chunk| T::from_le_bytes(chunk))
+        .map(|chunk| T::from_le_byte_slice(chunk))
         .collect();
 
     let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
