@@ -48,6 +48,14 @@ impl_from_le_byte_slice!(i64);
 // Now I learned generics, traits, and macros!
 // Rust is so much fun!
 
+impl PartialEq<Self> for Tensor {
+    fn eq(&self, other: &Self) -> bool {
+        self.dtype() == other.dtype()
+        && self.shape() == other.shape()
+        // && self.as_slice().unwrap() == other.as_slice().unwrap()
+    }
+}
+
 #[derive(Deserialize)]
 struct Info {
     dtype: String,
@@ -241,21 +249,21 @@ mod tests {
 
         let tensors = load_safetensors_permuted(path)?;
 
-        let expected = HashMap::new();
+        let mut expected = HashMap::new();
         expected.insert(
-            "F32_tensor",
+            String::from("F32_tensor"),
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
         );
         expected.insert(
-            "F64_tensor",
+            String::from("F64_tensor"),
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f64).collect())?,
         );
         expected.insert(
-            "I32_tensor",
+            String::from("I32_tensor"),
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i32).collect())?,
         );
         expected.insert(
-            "I64_tensor",
+            String::from("I64_tensor"),
             Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i64).collect())?,
         );
 
