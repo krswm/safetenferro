@@ -107,15 +107,29 @@ pub fn load_safetensors_permuted<P: AsRef<Path>>(
 
         let info: Info = serde_json::from_value(value)?;
 
-        let tensor = match info.dtype.as_str() {
-            "F32" => get_tensor_permuted::<f32>(&byte_buffer, info.shape, info.data_offsets)?,
-            "F64" => get_tensor_permuted::<f64>(&byte_buffer, info.shape, info.data_offsets)?,
-            "I32" => get_tensor_permuted::<i32>(&byte_buffer, info.shape, info.data_offsets)?,
-            "I64" => get_tensor_permuted::<i64>(&byte_buffer, info.shape, info.data_offsets)?,
-            _ => Tensor::from_vec_col_major(vec![], vec![0])?,
+        match info.dtype.as_str() {
+            "F32" => {
+                let tensor =
+                    get_tensor_permuted::<f32>(&byte_buffer, info.shape, info.data_offsets)?;
+                tensors.insert(key, tensor);
+            }
+            "F64" => {
+                let tensor =
+                    get_tensor_permuted::<f64>(&byte_buffer, info.shape, info.data_offsets)?;
+                tensors.insert(key, tensor);
+            }
+            "I32" => {
+                let tensor =
+                    get_tensor_permuted::<i32>(&byte_buffer, info.shape, info.data_offsets)?;
+                tensors.insert(key, tensor);
+            }
+            "I64" => {
+                let tensor =
+                    get_tensor_permuted::<i64>(&byte_buffer, info.shape, info.data_offsets)?;
+                tensors.insert(key, tensor);
+            }
+            _ => {}
         };
-
-        tensors.insert(key, tensor);
     }
 
     Ok(tensors)
