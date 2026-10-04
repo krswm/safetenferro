@@ -126,6 +126,8 @@ mod tests {
     use std::collections::HashSet;
     use std::path::PathBuf;
 
+    use tenferro_runtime::DType;
+
     use super::*;
 
     #[test]
@@ -159,7 +161,7 @@ mod tests {
 
         assert_eq!(
             tensors.keys().collect::<HashSet<_>>(),
-            expected_tensors.keys().collect::<HashSet<_>>(),
+            expected_tensors.keys().collect::<HashSet<_>>()
         );
 
         for key in expected_tensors.keys() {
@@ -169,8 +171,33 @@ mod tests {
             assert_eq!(tensor.dtype(), expected_tensor.dtype());
             assert_eq!(tensor.shape(), expected_tensor.shape());
 
-            type let dtype = expected_tensor.dtype();
-            assert_eq!(tensor.as_slice::<dtype>()?, expected_tensor.as_slice::<dtype>()?);
+            match expected_tensor.dtype() {
+                DType::F32 => {
+                    assert_eq!(
+                        tensor.as_slice::<f32>()?,
+                        expected_tensor.as_slice::<f32>()?
+                    );
+                }
+                DType::F64 => {
+                    assert_eq!(
+                        tensor.as_slice::<f64>()?,
+                        expected_tensor.as_slice::<f64>()?
+                    );
+                }
+                DType::I32 => {
+                    assert_eq!(
+                        tensor.as_slice::<i32>()?,
+                        expected_tensor.as_slice::<i32>()?
+                    );
+                }
+                DType::I64 => {
+                    assert_eq!(
+                        tensor.as_slice::<i64>()?,
+                        expected_tensor.as_slice::<i64>()?
+                    );
+                }
+                _ => {}
+            }
         }
 
         Ok(())
