@@ -70,7 +70,7 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
         .map(|chunk| T::from_le_byte_slice(chunk))
         .collect();
 
-    let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
+    let tensor = Tensor::from_vec_col_major(shape.into_iter().rev().collect::<Vec<_>>(), colmaj)?;
 
     Ok(tensor)
 }
@@ -130,36 +130,48 @@ mod tests {
 
     #[test]
     fn test_load_safetensors_permuted() -> Result<(), Box<dyn Error>> {
-        let out_dir = env!("OUT_DIR");
-        let path = PathBuf::from(&out_dir).join("tensors.safetensors");
+        let tensors = {
+            let out_dir = env!("OUT_DIR");
+            let path = PathBuf::from(&out_dir).join("tensors.safetensors");
+            load_safetensors_permuted(path)?
+        };
 
-        let tensors = load_safetensors_permuted(path)?;
-
-        let expected = {
-            let mut expected = HashMap::new();
-            expected.insert(
+        let expected_tensors = {
+            let mut tensors = HashMap::new();
+            tensors.insert(
                 String::from("F32_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
             );
-            expected.insert(
+            tensors.insert(
                 String::from("F64_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f64).collect())?,
             );
-            expected.insert(
+            tensors.insert(
                 String::from("I32_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i32).collect())?,
             );
-            expected.insert(
+            tensors.insert(
                 String::from("I64_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i64).collect())?,
             );
-            expected
+            tensors
         };
 
         assert_eq!(
             tensors.keys().collect::<HashSet<_>>(),
-            expected.keys().collect::<HashSet<_>>(),
+            expected_tensors.keys().collect::<HashSet<_>>(),
         );
+
+        for key in expected_tensors.keys() {
+            let tensor = &tensors[key];
+            let expected_tensor = &expected_tensors[key];
+
+            assert_eq!(tensor.dtype(), expected_tensor.dtype());
+            assert_eq!(tensor.shape(), expected_tensor.shape());
+
+            type let dtype = expected_tensor.dtype();
+            assert_eq!(tensor.as_slice::<dtype>()?, expected_tensor.as_slice::<dtype>()?);
+        }
 
         Ok(())
     }
