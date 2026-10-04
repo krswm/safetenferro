@@ -17,6 +17,8 @@
 // The specification of the Safetensors file format:
 // https://github.com/safetensors/safetensors#format
 
+//! This crate loads tensors from a [Safetensors](https://github.com/safetensors/safetensors) format file as tenferro’s `Tensor`s.
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -84,10 +86,11 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
     Ok(tensor)
 }
 
+/// Load a Safetensors file from `path`.
 pub fn load_safetensors_permuted<P: AsRef<Path>>(
-    safetensors_path: P,
+    path: P,
 ) -> Result<HashMap<String, Tensor>, Box<dyn Error>> {
-    let mut file = File::open(safetensors_path)?;
+    let mut file = File::open(path)?;
 
     let header: HashMap<String, Value> = {
         let header_size = {
