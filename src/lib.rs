@@ -1,4 +1,4 @@
-// GPT-2 Inference with tenferro
+// Safetensors Loader for tenferro
 // Copyright (C) 2026  Kurosawa Mutsumi
 //
 // This program is free software: you can redistribute it and/or modify
@@ -31,19 +31,26 @@ trait FromLeByteSlice {
     fn from_le_byte_slice(bytes: &[u8]) -> Self;
 }
 
-macro_rules! impl_from_le_byte_slice {
-    ($T:ty) => {
-        impl FromLeByteSlice for $T {
-            fn from_le_byte_slice(bytes: &[u8]) -> Self {
-                Self::from_le_bytes(bytes.try_into().unwrap())
-            }
-        }
-    };
+impl FromLeByteSlice for f32 {
+    fn from_le_byte_slice(bytes: &[u8]) -> Self {
+        Self::from_le_bytes(bytes.try_into().unwrap())
+    }
 }
-impl_from_le_byte_slice!(f32);
-impl_from_le_byte_slice!(f64);
-impl_from_le_byte_slice!(i32);
-impl_from_le_byte_slice!(i64);
+impl FromLeByteSlice for f64 {
+    fn from_le_byte_slice(bytes: &[u8]) -> Self {
+        Self::from_le_bytes(bytes.try_into().unwrap())
+    }
+}
+impl FromLeByteSlice for i32 {
+    fn from_le_byte_slice(bytes: &[u8]) -> Self {
+        Self::from_le_bytes(bytes.try_into().unwrap())
+    }
+}
+impl FromLeByteSlice for i64 {
+    fn from_le_byte_slice(bytes: &[u8]) -> Self {
+        Self::from_le_bytes(bytes.try_into().unwrap())
+    }
+}
 
 #[derive(Deserialize)]
 struct Info {
@@ -53,25 +60,27 @@ struct Info {
 }
 
 fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
+    info: Info,
     byte_buffer: &[u8],
-    shape: Vec<usize>,
-    data_offsets: (usize, usize),
 ) -> Result<Tensor, Box<dyn Error>> {
-    let size: usize = std::mem::size_of::<T>();
-
-    let begin = data_offsets.0;
-    let end = begin + size * shape.iter().product::<usize>();
-    if end < data_offsets.1 {
+    let size = std::mem::size_of::<T>();
+    let begin = info.data_offsets.0;
+    let end = begin + size * info.shape.iter().product::<usize>();
+    if end < info.data_offsets.1 {
         return Err("tensor data smaller than tensor shape suggests".into());
     }
 
-    let colmaj: Vec<T> = byte_buffer[begin..end]
+    // Feed the tensor data in the file (row-major) to `from_vec_col_major`.
+    // As a result, we get the *permuted* tensor.
+    let colmaj: Vec<_> = byte_buffer[begin..end]
         .chunks_exact(size)
         .map(|chunk| T::from_le_byte_slice(chunk))
         .collect();
 
-    let tensor = Tensor::from_vec_col_major(shape.into_iter().rev().collect::<Vec<_>>(), colmaj)?;
+    // Revert the shape because we need a *permuted* tensor.
+    let shape = info.shape.into_iter().rev().collect::<Vec<_>>();
 
+    let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
     Ok(tensor)
 }
 
@@ -109,23 +118,19 @@ pub fn load_safetensors_permuted<P: AsRef<Path>>(
 
         match info.dtype.as_str() {
             "F32" => {
-                let tensor =
-                    get_tensor_permuted::<f32>(&byte_buffer, info.shape, info.data_offsets)?;
+                let tensor = get_tensor_permuted::<f32>(info, &byte_buffer)?;
                 tensors.insert(key, tensor);
             }
             "F64" => {
-                let tensor =
-                    get_tensor_permuted::<f64>(&byte_buffer, info.shape, info.data_offsets)?;
+                let tensor = get_tensor_permuted::<f64>(info, &byte_buffer)?;
                 tensors.insert(key, tensor);
             }
             "I32" => {
-                let tensor =
-                    get_tensor_permuted::<i32>(&byte_buffer, info.shape, info.data_offsets)?;
+                let tensor = get_tensor_permuted::<i32>(info, &byte_buffer)?;
                 tensors.insert(key, tensor);
             }
             "I64" => {
-                let tensor =
-                    get_tensor_permuted::<i64>(&byte_buffer, info.shape, info.data_offsets)?;
+                let tensor = get_tensor_permuted::<i64>(info, &byte_buffer)?;
                 tensors.insert(key, tensor);
             }
             _ => {}
