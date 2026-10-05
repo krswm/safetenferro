@@ -1,99 +1,43 @@
-# GPT-2 Inference with tenferro
+# Safetensors Loader for tenferro
 
-I built a GPT-2 inference engine from scratch in Rust.
+This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
 
-It is built on [tenferro](https://github.com/tensor4all/tenferro-rs), a Rust-native tensor library.
+[Safetensors](https://github.com/safetensors/safetensors) is a serialization
+format to store tensors in a file.
 
-![(Cherrypicked) demo](https://raw.githubusercontent.com/krswm/asset/main/slope-rs/demo.gif)
+*safetenferro* is a wordplay of *Safetensors* and *tenferro*.
 
-I also built:
+> [!NOTE]
+> This repository is **not** a part of the official Safetensors (Hugging Face) project.
+> This repository is **not** a part of the official tenferro (tensor4all) project.
+> This repository is a hobby project of mine.
+> Use at your own risk.
 
-- [An inference engine for GPT-2 in Julia](https://github.com/krswm/slope-jl)
-- [An inference engine for Stable Diffusion in Rust](https://github.com/krswm/diff-rs)
-- [An inference engine for Stable Diffusion in Julia](https://github.com/krswm/diff-jl)
+## Example
 
-## Quickstart
+Load tensors from a file `$OUT_DIR/tensors.safetensors`.
 
-I made this project just for **educational purpose**. Use at your own risk.
+```rust
+use std::path::PathBuf;
 
-It is assumed that you have cURL, Git, and Cargo installed on your machine.
+let out_dir = env!("OUT_DIR");
+let path = PathBuf::from(&out_dir).join("tensors.safetensors");
 
-**Download a pretrained GPT-2 model from Hugging Face.**
-
-```
-curl --progress-bar --location --remote-name --output-dir model --create-dirs 'https://huggingface.co/openai-community/gpt2/resolve/main/{config.json,vocab.json,merges.txt,model.safetensors}'
-```
-
-**Clone this repository.**
-
-```
-git clone https://github.com/krswm/slope-rs.git
-cd slope-rs
+safetenferro::load_safetensors_permuted(path)?;
 ```
 
-**Compile the program.**
+## Limitations (a.k.a. TODO)
 
-```
-cargo build --release
-```
-
-**Start generating text.**
-The GPT-2 model is not for chat conversation, but for text continuation.
-
-```
-target/release/slope-rs ../model 0.75 'Rust is a programming language. It is fun to code in Rust.'
-```
-
-The second parameter (`0.75` here) is sampling temperature, which controls the randomness of the generated text.
-Set it to `0.0` to make the generated text deterministic.
-Increase it to make the generated text more *creative*.
-
-## Supported Models
-
-This program only supports models that are build on the GPT-2 architecture.
-
-This program only supports models that have the following files in the model repository.
-
-- `config.json`
-- `vocab.json`
-- `merges.txt`
-- `model.safetensors`
-
-I have verified that this program works with the following models.
-
-- [GPT-2](https://huggingface.co/openai-community/gpt2)
-- [GPT-2 Medium](https://huggingface.co/openai-community/gpt2-medium)
-- [GPT-2 Large](https://huggingface.co/openai-community/gpt2-large)
-- [GPT-2 XL](https://huggingface.co/openai-community/gpt2-xl)
-
-## Source Files
-
-- [`src/loader.rs`](src/loader.rs) loads a file in [the Safetensors format](https://github.com/safetensors/safetensors) and converts the tensors into tenferro’s `TypedTensor`s.
-- [`src/model.rs`](src/model.rs) builds a `struct` holding the parameters of the model.
-- [`src/tokenizer.rs`](src/tokenizer.rs) converts your prompt into numbers that the model understands (tokens) with the BPE algorithm.
-- [`src/transformer.rs`](src/transformer.rs) is the heart of the GPT-2 inferenece. It receives tokens (your prompt + already generated text) and predicts the next token.
-- [`src/main.rs`](src/main.rs) loads files from the GPT-2 repository and generates text.
-
-## My Future Plans
-
-- Use GPU backend. tenferro provides CUDA and WebGPU backend. (I’m not sure whether I currently have an access for such hardware though…)
-- Support variety of LLM architectures beyond GPT-2 such as Llama 2.
-- Ultimately, implement LLM training from scratch. (I’m interested on [TinyStories](https://arxiv.org/pdf/2305.07759).)
-
-## Credits
-
-- [GPT-2](https://huggingface.co/openai-community/gpt2) for devising an influental LLM architecture.
-- [*GPT in 60 Lines of NumPy*](https://jaykmody.com/blog/gpt-from-scratch/) (a blog post) for teaching me how to implement a GPT-2 inference engine from scratch.
-- [*Implementing A Byte Pair Encoding (BPE) Tokenizer From Scratch*](https://sebastianraschka.com/blog/2025/bpe-from-scratch.html) (a blog post) for teaching me how to implement a BPE tokenizer from scratch.
-- [tenferro](https://github.com/tensor4all/tenferro-rs) for providing me an amazing tensor library for Rust.
+- This crate does not write a Safetensors file.
+- Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not supported and **silently ignored**.
+- Metadata is not supported and ignored.
+- This function does not validate the file for the points what [the specification](https://github.com/safetensors/safetensors#format) says a Safetensor file must obey.
+  The points are:
+  - The header must start with `{`.
+  - The byte buffer need to be entirely indexed.
 
 ## Development
 
-This is a hobby project of mine I started from scratch.
+This repository originated from a part of [my GPT-2 inference engine built on tenferro](https://github.com/krswm/slope-rs).
 
-- 2026-07-03: I started this project.
-- 2026-07-14: I finished implementing an GPT-2 inference engine in Rust.
-- 2026-08-23: I finished rewriting the transformer to use KV-cache.
-
-I used open source LLM inference engines (Ollama, etc.) and open weight LLM models (TinyLlama, GPT-2, etc.) only for the purpose to observe their behavior as LLM architecture.
-Except for this, I did **not** use generative AI for this project at all.
+I did **not** use generative AI for this project at all.
