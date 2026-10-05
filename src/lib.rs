@@ -14,10 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// The specification of the Safetensors file format:
-// https://github.com/safetensors/safetensors#format
+//! This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
+//!
+//! [Safetensors](https://github.com/safetensors/safetensors) is a serialization
+//! format to store tensors in a file.
+//!
+//! This crate does not write a Safetensors file.
 
-//! This crate loads tensors from a [Safetensors](https://github.com/safetensors/safetensors) format file as tenferro’s `Tensor`s.
+// Safetensors specification:
+// https://github.com/safetensors/safetensors#format
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -87,6 +92,48 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
 }
 
 /// Load a Safetensors file from `path`.
+///
+/// The tensors are permuted.
+/// That is, if the tensor in the file is:
+///
+/// ```text
+/// 0 1 2
+/// 3 4 5
+/// ```
+///
+/// you will get:
+///
+/// ```text
+/// 0 3
+/// 1 4
+/// 2 5
+/// ```
+///
+/// # Limitations
+///
+/// - Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not
+///   supported and **silently ignored**.
+/// - Metadata is not supported and ignored.
+/// - This function does not validate the file for the points what
+///   [the specification](https://github.com/safetensors/safetensors#format)
+///   says a Safetensor file must obey.
+///   The points are:
+///   - The header must start with `{`.
+///   - The byte buffer need to be entirely indexed.
+///
+/// # Example
+///
+/// Load tensors from a file `$OUT_DIR/tensors.safetensors`.
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let out_dir = env!("OUT_DIR");
+/// let path = PathBuf::from(&out_dir).join("tensors.safetensors");
+///
+/// safetenferro::load_safetensors_permuted(path)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn load_safetensors_permuted<P: AsRef<Path>>(
     path: P,
 ) -> Result<HashMap<String, Tensor>, Box<dyn Error>> {
