@@ -22,7 +22,7 @@ This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
 - This crate does not write a Safetensors file.
 - Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not supported and **silently ignored**.
 - Metadata is not supported and ignored.
-- This function does not validate the file for the points what [the specification](https://github.com/safetensors/safetensors#format) says a Safetensor file must obey.
+- The function in this crate does not validate the file for the points what [the specification](https://github.com/safetensors/safetensors#format) says a Safetensor file must obey.
   Namely:
   - The header must start with `{`.
   - The byte buffer need to be entirely indexed.
