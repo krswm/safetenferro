@@ -12,10 +12,11 @@ This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
 > This repository is **not** a part of the official Safetensors (Hugging Face) project.
 >
 > This repository is **not** a part of the official tenferro (tensor4all) project.
+
+> [!WARNING]
+> **Anything of this crate (including public API and git URL) is subject to change.**
 >
-> **Anything of this crate (including public API and git URL) is subject of change.**
->
-> Use at your own risk.
+> Use this crate at your own risk.
 
 ## Example
 
