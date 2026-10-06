@@ -1,6 +1,6 @@
 # Safetensors Loader for tenferro
 
-This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
+This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
 
 [Safetensors](https://github.com/safetensors/safetensors) is a serialization format to store tensors in a file.
 
