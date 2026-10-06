@@ -2,29 +2,20 @@
 
 This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
 
-[Safetensors](https://github.com/safetensors/safetensors) is a serialization
-format to store tensors in a file.
+[Safetensors](https://github.com/safetensors/safetensors) is a serialization format to store tensors in a file.
+
+[tenferro](https://github.com/tensor4all/tenferro-rs) is a Rust-native tensor library.
 
 *safetenferro* is a wordplay of *Safetensors* and *tenferro*.
 
 > [!NOTE]
 > This repository is **not** a part of the official Safetensors (Hugging Face) project.
+>
 > This repository is **not** a part of the official tenferro (tensor4all) project.
-> This repository is a hobby project of mine.
+>
+> **Anything of this crate (including public API and git URL) is subject of change.**
+>
 > Use at your own risk.
-
-## Example
-
-Load tensors from a file `$OUT_DIR/tensors.safetensors`.
-
-```rust
-use std::path::PathBuf;
-
-let out_dir = env!("OUT_DIR");
-let path = PathBuf::from(&out_dir).join("tensors.safetensors");
-
-safetenferro::load_safetensors_permuted(path)?;
-```
 
 ## Limitations (a.k.a. TODO)
 
@@ -32,12 +23,25 @@ safetenferro::load_safetensors_permuted(path)?;
 - Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not supported and **silently ignored**.
 - Metadata is not supported and ignored.
 - This function does not validate the file for the points what [the specification](https://github.com/safetensors/safetensors#format) says a Safetensor file must obey.
-  The points are:
+  Namely:
   - The header must start with `{`.
   - The byte buffer need to be entirely indexed.
 
+## Credits
+
+- [Safetensors](https://github.com/safetensors/safetensors) for the specification, reference implementation for unit test, and inspiration.
+- [tenferro](https://github.com/tensor4all/tenferro-rs) for providing me an amazing tensor library for Rust.
+
 ## Development
 
+This is a hobby project of mine I started from scratch.
+
 This repository originated from a part of [my GPT-2 inference engine built on tenferro](https://github.com/krswm/slope-rs).
+
+- 2026-07-08: I started implementing on a Safetensors loader for tenferro as a part of my GPT-2 inference engine.
+- 2026-10-01: I started to turn the loader code into a separate crate.
+
+I enjoyed working on this project!
+I learned some concepts of Rust: traits and generics.
 
 I did **not** use generative AI for this project at all.
