@@ -27,9 +27,18 @@ This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
   - The header must start with `{`.
   - The byte buffer need to be entirely indexed.
 
+## [Dependencies](Cargo.toml)
+
+- `serde_json` and `serde` to parse JSON.
+- `tenferro-runtime`.
+
+This crate requires `python3` command on the shell to generate a Safetensors file for unit test.
+Just for `release` build, you do not need `python3`.
+
 ## Credits
 
 - [Safetensors](https://github.com/safetensors/safetensors) for the specification, reference implementation for unit test, and inspiration.
+- [serde-json](https://github.com/serde-rs/json) for a JSON library for Rust.
 - [tenferro](https://github.com/tensor4all/tenferro-rs) for providing me an amazing tensor library for Rust.
 
 ## Development
