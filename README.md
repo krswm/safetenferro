@@ -17,6 +17,33 @@ This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
 >
 > Use at your own risk.
 
+## Example
+
+Add this crate to `Cargo.toml`.
+
+```toml
+safetenferro = { git = "https://github.com/krswm/safetenferro.git" }
+```
+
+Example: Load a Safetensors file at `tensors.safetensors`.
+
+```rust
+use std::collections::HashMap;
+use std::error::Error;
+
+use tenferro_runtime::Tensor;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let tensors: HashMap<String, Tensor> = safetenferro::load_safetensors_permuted("tensors.safetensors")?;
+
+    let tensor: &Tensor = &tensors["tensor_name"];
+
+    println!("{:?} {:?} {:?}", tensor.dtype(), tensor.shape(), tensor.as_slice::<f64>()?);
+
+    Ok(())
+}
+```
+
 ## Limitations (a.k.a. TODO)
 
 - This crate does not write a Safetensors file.
