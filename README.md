@@ -9,9 +9,9 @@ This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
 *safetenferro* is a wordplay of *Safetensors* and *tenferro*.
 
 > [!NOTE]
-> This repository is **not** a part of the official Safetensors (Hugging Face) project.
+> This crate is **not** a part of the official Safetensors (Hugging Face) project.
 >
-> This repository is **not** a part of the official tenferro (tensor4all) project.
+> This crate is **not** a part of the official tenferro (tensor4all) project.
 
 > [!WARNING]
 > **Anything of this crate (including public API and git URL) is subject to change.**
