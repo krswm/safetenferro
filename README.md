@@ -36,9 +36,9 @@ This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
 
 This is a hobby project of mine I started from scratch.
 
-This repository originated from a part of [my GPT-2 inference engine built on tenferro](https://github.com/krswm/slope-rs).
+This crate originated from a part of [my GPT-2 inference engine built on tenferro](https://github.com/krswm/slope-rs).
 
-- 2026-07-08: I started implementing on a Safetensors loader for tenferro as a part of my GPT-2 inference engine.
+- 2026-07-08: I started implementing a Safetensors loader for tenferro as a part of my GPT-2 inference engine.
 - 2026-10-01: I started to turn the loader code into a separate crate.
 
 I enjoyed working on this project!
