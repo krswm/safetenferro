@@ -15,11 +15,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! This crate loads tensors from a Safetensors file as tenferro’s `Tensor`s.
-//!
-//! [Safetensors](https://github.com/safetensors/safetensors) is a serialization
-//! format to store tensors in a file.
-//!
-//! This crate does not write a Safetensors file.
 
 // Safetensors specification:
 // https://github.com/safetensors/safetensors#format
@@ -78,13 +73,13 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
     }
 
     // Feed the tensor data in the file (row-major) to `from_vec_col_major`.
-    // As a result, we get the *permuted* tensor.
+    // As a result, we get the permuted tensor.
     let colmaj: Vec<_> = byte_buffer[begin..end]
         .chunks_exact(size)
         .map(|chunk| T::from_le_byte_slice(chunk))
         .collect();
 
-    // Revert the shape because we need a *permuted* tensor.
+    // Revert the shape because we need a permuted tensor.
     let shape = info.shape.into_iter().rev().collect::<Vec<_>>();
 
     let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
@@ -117,23 +112,9 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
 /// - This function does not validate the file for the points what
 ///   [the specification](https://github.com/safetensors/safetensors#format)
 ///   says a Safetensor file must obey.
-///   The points are:
+///   Namely:
 ///   - The header must start with `{`.
 ///   - The byte buffer need to be entirely indexed.
-///
-/// # Example
-///
-/// Load tensors from a file `$OUT_DIR/tensors.safetensors`.
-///
-/// ```
-/// use std::path::PathBuf;
-///
-/// let out_dir = env!("OUT_DIR");
-/// let path = PathBuf::from(&out_dir).join("tensors.safetensors");
-///
-/// safetenferro::load_safetensors_permuted(path)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 pub fn load_safetensors_permuted<P: AsRef<Path>>(
     path: P,
 ) -> Result<HashMap<String, Tensor>, Box<dyn Error>> {
