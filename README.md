@@ -21,6 +21,7 @@ This crate loads tensors from a Safetensors file as `tenferro_runtime::Tensor`s.
 ## Example
 
 Add this crate to `Cargo.toml`.
+This crate is not available at crates.io.
 
 ```toml
 safetenferro = { git = "https://github.com/krswm/safetenferro.git" }
