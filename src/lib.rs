@@ -191,20 +191,24 @@ mod tests {
         let expected_tensors = {
             let mut tensors = HashMap::new();
             tensors.insert(
-                String::from("F32_tensor"),
+                String::from("f32_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
             );
             tensors.insert(
-                String::from("F64_tensor"),
+                String::from("f64_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f64).collect())?,
             );
             tensors.insert(
-                String::from("I32_tensor"),
+                String::from("i32_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i32).collect())?,
             );
             tensors.insert(
-                String::from("I64_tensor"),
+                String::from("i64_tensor"),
                 Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as i64).collect())?,
+            );
+            tensors.insert(
+                String::from("bf16_tensor"),
+                Tensor::from_vec_col_major(vec![4, 3, 2], (0..24).map(|x| x as f32).collect())?,
             );
             tensors
         };

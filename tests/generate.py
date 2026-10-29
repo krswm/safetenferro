@@ -1,20 +1,20 @@
-import numpy
-from safetensors.numpy import save_file
+import torch
+from safetensors.torch import save_file
 
-tensors: dict[str, numpy.ndarray] = {
-    "F32_tensor": numpy.array(range(24), dtype=numpy.float32).reshape(2, 3, 4),
-    "F64_tensor": numpy.array(range(24), dtype=numpy.float64).reshape(2, 3, 4),
-    "I32_tensor": numpy.array(range(24), dtype=numpy.int32).reshape(2, 3, 4),
-    "I64_tensor": numpy.array(range(24), dtype=numpy.int64).reshape(2, 3, 4),
-    "BOOL_tensor": numpy.array([], dtype=numpy.bool),
-    "I8_tensor": numpy.array([], dtype=numpy.int8),
-    "U8_tensor": numpy.array([], dtype=numpy.uint8),
-    "I16_tensor": numpy.array([], dtype=numpy.int16),
-    "U16_tensor": numpy.array([], dtype=numpy.uint16),
-    "U32_tensor": numpy.array([], dtype=numpy.uint32),
-    "U64_tensor": numpy.array([], dtype=numpy.uint64),
-    "F16_tensor": numpy.array([], dtype=numpy.float16),
-    "C64_tensor": numpy.array([], dtype=numpy.complex64),
+tensors: dict[str, torch.Tensor] = {
+    "f16_tensor": torch.tensor(range(24), dtype=torch.float16).reshape(2, 3, 4),
+    "f32_tensor": torch.tensor(range(24), dtype=torch.float32).reshape(2, 3, 4),
+    "f64_tensor": torch.tensor(range(24), dtype=torch.float64).reshape(2, 3, 4),
+    "bf16_tensor": torch.tensor(range(24), dtype=torch.bfloat16).reshape(2, 3, 4),
+    "i8_tensor": torch.tensor(range(24), dtype=torch.int8).reshape(2, 3, 4),
+    "u8_tensor": torch.tensor(range(24), dtype=torch.uint8).reshape(2, 3, 4),
+    "i16_tensor": torch.tensor(range(24), dtype=torch.int16).reshape(2, 3, 4),
+    "u16_tensor": torch.tensor(range(24), dtype=torch.uint16).reshape(2, 3, 4),
+    "i32_tensor": torch.tensor(range(24), dtype=torch.int32).reshape(2, 3, 4),
+    "u32_tensor": torch.tensor(range(24), dtype=torch.uint32).reshape(2, 3, 4),
+    "i64_tensor": torch.tensor(range(24), dtype=torch.int64).reshape(2, 3, 4),
+    "u64_tensor": torch.tensor(range(24), dtype=torch.uint64).reshape(2, 3, 4),
+    "bool_tensor": torch.tensor([], dtype=torch.bool),
 }
 metadata = {"metadata_key": "metadata_value"}
 save_file(tensors, "tensors.safetensors", metadata)
