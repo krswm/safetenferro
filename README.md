@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 ## Limitations (a.k.a. TODO)
 
 - This crate does not write a Safetensors file.
-- Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not supported and **silently ignored**.
+- Tensors with dtypes other than `F32`, `F64`, `I32`, `I64`, and `BF16` are not supported and **silently ignored**.
 - Metadata is not supported and ignored.
 - The function in this crate does not validate the file for the points what [the specification](https://github.com/safetensors/safetensors#format) says a Safetensor file must obey.
   Namely:
