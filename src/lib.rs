@@ -86,6 +86,36 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
     Ok(tensor)
 }
 
+fn get_tensor_permuted_bf16(info: Info, byte_buffer: &[u8]) -> Result<Tensor, Box<dyn Error>> {
+    // The bit-layout of bfloat16: saaa_aaaa_afff_ffff
+    // The bit-layout of float32:  saaa_aaaa_afff_ffff_ffff_ffff_ffff_ffff
+
+    // When you append sixteen zero bits
+    // at the end of the bit-layout of your bfloat16 number
+    // and interpret it as a bit-layout of a float32 number,
+    // you will get the identical numerical value.
+
+    let size = 2;
+    let begin = info.data_offsets.0;
+    let end = begin + size * info.shape.iter().product::<usize>();
+    if end < info.data_offsets.1 {
+        return Err("tensor data smaller than tensor shape suggests".into());
+    }
+
+    // Feed the tensor data in the file (row-major) to `from_vec_col_major`.
+    // As a result, we get the permuted tensor.
+    let colmaj: Vec<_> = byte_buffer[begin..end]
+        .chunks_exact(size)
+        .map(|chunk| f32::from_le_bytes([0u8, 0u8, chunk[0], chunk[1]]))
+        .collect();
+
+    // Revert the shape because we need a permuted tensor.
+    let shape = info.shape.into_iter().rev().collect::<Vec<_>>();
+
+    let tensor = Tensor::from_vec_col_major(shape, colmaj)?;
+    Ok(tensor)
+}
+
 /// Load a Safetensors file from `path`.
 ///
 /// The tensors are permuted.
@@ -106,8 +136,10 @@ fn get_tensor_permuted<T: FromLeByteSlice + TensorScalar>(
 ///
 /// # Limitations
 ///
-/// - Tensors with dtypes other than `F32`, `F64`, `I32`, and `I64` are not
+/// - Tensors with dtypes other than `F32`, `F64`, `I32`, `I64`, and `BF16` are not
 ///   supported and **silently ignored**.
+/// - `F32`, `F64`, `I32`, and `I64` tensors become `tenferro_runtime::Tensor` with the same dtypes.
+/// - A `BF16` tensor becomes `tenferro_runtime::Tensor` with dtype `F32`.
 /// - Metadata is not supported and ignored.
 /// - This function does not validate the file for the points what
 ///   [the specification](https://github.com/safetensors/safetensors#format)
@@ -162,6 +194,10 @@ pub fn load_safetensors_permuted<P: AsRef<Path>>(
             }
             "I64" => {
                 let tensor = get_tensor_permuted::<i64>(info, &byte_buffer)?;
+                tensors.insert(key, tensor);
+            }
+            "BF16" => {
+                let tensor = get_tensor_permuted_bf16(info, &byte_buffer)?;
                 tensors.insert(key, tensor);
             }
             _ => {}
